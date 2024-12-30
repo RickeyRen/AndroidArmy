@@ -11,41 +11,36 @@ body {
     color: #fff;
     min-height: 100vh;
     position: relative;
-    -webkit-app-region: drag;
-}
-
-body::before {
-    content: '';
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    backdrop-filter: blur(30px) saturate(180%);
-    -webkit-backdrop-filter: blur(30px) saturate(180%);
-    z-index: -1;
-    background: rgba(0, 0, 0, 0.2);
 }
 
 #app {
     display: flex;
     min-height: 100vh;
     background: transparent;
-    padding-top: 28px;
+}
+
+/* 标题栏样式 */
+.titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    -webkit-app-region: drag;
+    z-index: 9999;
+    background: transparent;
 }
 
 /* 侧边栏样式 */
 .sidebar {
     width: 300px;
-    background: rgba(28, 28, 30, 0.65);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background: rgba(0, 0, 0, 0.1);
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 20px;
-    -webkit-app-region: no-drag;
+    padding-top: 40px;
 }
 
 .logo {
@@ -80,9 +75,7 @@ body::before {
     gap: 8px;
     padding: 10px;
     border-radius: 8px;
-    background: rgba(28, 28, 30, 0.5);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: rgba(0, 0, 0, 0.1);
     border: none;
     color: #fff;
     cursor: pointer;
@@ -90,7 +83,7 @@ body::before {
 }
 
 .menu-item:hover {
-    background: rgba(28, 28, 30, 0.7);
+    background: rgba(0, 0, 0, 0.2);
 }
 
 .menu-item:disabled {
@@ -103,17 +96,13 @@ body::before {
     flex: 1;
     padding: 20px;
     overflow-y: auto;
-    background: rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    -webkit-app-region: no-drag;
+    background: rgba(0, 0, 0, 0.05);
+    padding-top: 40px;
 }
 
 /* 表单组样式 */
 .form-group {
-    background: rgba(18, 18, 18, 0.85);
-    backdrop-filter: blur(50px) saturate(180%);
-    -webkit-backdrop-filter: blur(50px) saturate(180%);
+    background: rgba(0, 0, 0, 0.15);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     padding: 20px;
@@ -141,9 +130,7 @@ body::before {
     padding: 10px 12px;
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(18, 18, 18, 0.85);
-    backdrop-filter: blur(30px);
-    -webkit-backdrop-filter: blur(30px);
+    background: rgba(0, 0, 0, 0.2);
     color: #fff;
     font-size: 14px;
     transition: all 0.3s ease;
@@ -151,7 +138,7 @@ body::before {
 
 .form-content input:focus {
     border-color: rgba(76, 175, 80, 0.4);
-    background: rgba(28, 28, 30, 0.95);
+    background: rgba(0, 0, 0, 0.25);
     box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
 }
 
@@ -185,7 +172,7 @@ body::before {
 /* 通知样式 */
 .notifications {
     position: fixed;
-    top: 20px;
+    top: 60px; /* 为 macOS 标题栏留出空间 */
     right: 20px;
     display: flex;
     flex-direction: column;

@@ -14,7 +14,7 @@ class ScrcpyManager extends EventEmitter {
             await this.stopSession(deviceId);
         }
 
-        const args = this.settingsManager.getScrcpyArgs(deviceId);
+        const args = await this.getScrcpyArgs(deviceId);
 
         try {
             console.log('启动 scrcpy，参数:', args.join(' '));
@@ -107,6 +107,36 @@ class ScrcpyManager extends EventEmitter {
             sessions.push(this.getSessionInfo(deviceId));
         }
         return sessions;
+    }
+
+    async getScrcpyArgs(deviceId) {
+        const settings = await this.settingsManager.getScrcpySettings();
+        const args = ['-s', deviceId];
+
+        // 添加基本设置
+        if (settings.maxSize) args.push('--max-size', settings.maxSize);
+        if (settings.videoBitrateKbps) args.push('--video-bit-rate', settings.videoBitrateKbps + 'K');
+        if (settings.maxFps) args.push('--max-fps', settings.maxFps);
+        if (settings.screenWidth && settings.screenHeight) {
+            args.push('--window-width', settings.screenWidth);
+            args.push('--window-height', settings.screenHeight);
+        }
+        if (settings.lockVideoOrientation !== undefined && settings.lockVideoOrientation !== -1) {
+            args.push('--lock-video-orientation', settings.lockVideoOrientation);
+        }
+        if (settings.encoderName) args.push('--encoder', settings.encoderName);
+        if (settings.borderless) args.push('--window-borderless');
+        if (settings.fullscreen) args.push('--fullscreen');
+        if (settings.alwaysOnTop) args.push('--always-on-top');
+        if (settings.stayAwake) args.push('--stay-awake');
+        if (settings.turnScreenOff) args.push('--turn-screen-off');
+        if (settings.showTouches) args.push('--show-touches');
+        if (settings.audioEnabled) args.push('--audio');
+        if (settings.powerOffOnClose) args.push('--power-off-on-close');
+        if (!settings.clipboardAutosync) args.push('--no-clipboard-autosync');
+        if (!settings.shortcutKeysEnabled) args.push('--disable-screensaver');
+
+        return args;
     }
 }
 

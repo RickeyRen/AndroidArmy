@@ -50,20 +50,20 @@ async function refreshDeviceList(force = false) {
         }
 
         const devices = await deviceManager.getDevices();
-        const devicesWithCustomNames = await Promise.all(devices.map(async device => ({
+        const devicesWithDisplayNames = await Promise.all(devices.map(async device => ({
             ...device,
-            customName: await settingsManager.getDeviceCustomName(device.id)
+            displayName: await settingsManager.getDeviceCustomName(device.ip_port)
         })));
         
         if (mainWindow) {
-            mainWindow.webContents.send('devices-updated', devicesWithCustomNames);
+            mainWindow.webContents.send('devices-updated', devicesWithDisplayNames);
         }
         
         lastRefreshTime = now;
-        return devicesWithCustomNames; // 返回处理后的设备列表
+        return devicesWithDisplayNames;
     } catch (error) {
         console.error('刷新设备列表失败:', error);
-        throw error; // 抛出错误以便上层处理
+        throw error;
     }
 }
 
@@ -123,21 +123,40 @@ app.whenReady().then(async () => {
         logError('应用程序启动时验证设置失败:', error);
         // 继续启动应用，但记录错误
         createWindow();
-        await setupDeviceListRefresh();
+        await setupDeviceListRefresh().catch(e => logError('设置设备列表刷新失败:', e));
     }
+}).catch(error => {
+    logError('应用程序启动失败:', error);
+    app.quit();
 });
 
 // 设备列表设置相关 IPC 处理
 ipcMain.handle('get-device-list-settings', async () => {
-    await settingsManager.waitForInit();
-    return await settingsManager.getDeviceListSettings();
+    try {
+        await settingsManager.waitForInit();
+        const settings = await settingsManager.getDeviceListSettings();
+        if (!settings) {
+            throw new Error('无法获取设备列表设置');
+        }
+        return settings;
+    } catch (error) {
+        logError('获取设备列表设置失败:', error);
+        return settingsManager.defaultSettings.deviceList;
+    }
 });
 
 ipcMain.handle('update-device-list-settings', async (event, settings) => {
-    await settingsManager.waitForInit();
-    const updatedSettings = await settingsManager.updateDeviceListSettings(settings);
-    await setupDeviceListRefresh(); // 更新设置后重新设置刷新定时器
-    return updatedSettings;
+    try {
+        await settingsManager.waitForInit();
+        if (!settings) {
+            throw new Error('设置不能为空');
+        }
+        const result = await settingsManager.updateDeviceListSettings(settings);
+        return result;
+    } catch (error) {
+        logError('更新设备列表设置失败:', error);
+        return settingsManager.defaultSettings.deviceList;
+    }
 });
 
 // 手动刷新设备列表
@@ -150,11 +169,11 @@ ipcMain.handle('refresh-device-list', async () => {
 ipcMain.handle('get-devices', async () => {
     try {
         const devices = await deviceManager.getDevices();
-        const devicesWithCustomNames = await Promise.all(devices.map(async device => ({
+        const devicesWithDisplayNames = await Promise.all(devices.map(async device => ({
             ...device,
-            customName: await settingsManager.getDeviceCustomName(device.id)
+            displayName: await settingsManager.getDeviceCustomName(device.ip_port)
         })));
-        return devicesWithCustomNames;
+        return devicesWithDisplayNames;
     } catch (error) {
         console.error('获取设备列表失败:', error);
         throw error;
@@ -173,54 +192,61 @@ ipcMain.handle('pair-device', async (event, { ip, port, code }) => {
     return result;
 });
 
-ipcMain.handle('connect-device', async (event, { ip, port }) => {
-    const result = await deviceManager.connectDevice(ip, port);
-    
-    // 智能刷新：连接后刷新
-    const settings = await settingsManager.getDeviceListSettings();
-    if (settings.refreshMode === 'smart' && settings.smartRefreshEvents.includes('connect')) {
-        await refreshDeviceList(true);
+// 设备连接
+ipcMain.handle('connect-device', async (event, ip, port) => {
+    try {
+        console.log('正在连接设备:', { ip, port });
+        const result = await deviceManager.connectDevice(ip, port);
+        console.log('设备连接结果:', result);
+        return result;
+    } catch (error) {
+        console.error('连接设备失败:', error);
+        throw error;
     }
-    
-    return result;
 });
 
+// 设备断开连接
 ipcMain.handle('disconnect-device', async (event, deviceId) => {
-    const result = await deviceManager.disconnectDevice(deviceId);
-    
-    // 智能刷新：断开连接后刷新
-    const settings = await settingsManager.getDeviceListSettings();
-    if (settings.refreshMode === 'smart' && settings.smartRefreshEvents.includes('disconnect')) {
-        await refreshDeviceList(true);
+    try {
+        console.log('正在断开设备:', deviceId);
+        const result = await deviceManager.disconnectDevice(deviceId);
+        console.log('设备断开结果:', result);
+        return result;
+    } catch (error) {
+        console.error('断开设备失败:', error);
+        throw error;
     }
-    
-    return result;
 });
 
 function createWindow() {
-    mainWindow = new BrowserWindow({
+    const windowOptions = {
         width: 1200,
         height: 800,
-        titleBarStyle: 'hiddenInset',
-        vibrancy: 'under-window',
-        visualEffectState: 'active',
-        backgroundColor: '#00ffffff',
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js')
-        }
-    });
+        },
+        vibrancy: 'menu',
+        visualEffectState: 'active',
+        backgroundColor: '#00000000',
+        transparent: true
+    };
 
-    // 设置窗口背景为透明
-    mainWindow.setBackgroundColor('#00000000');
+    // macOS 特定配置
+    if (process.platform === 'darwin') {
+        windowOptions.titleBarStyle = 'hiddenInset';
+        windowOptions.trafficLightPosition = { x: 20, y: 20 };
+    }
 
-    mainWindow.loadFile('frontend/index.html');
-    
+    mainWindow = new BrowserWindow(windowOptions);
+
     // 开发环境下打开开发者工具
     if (process.env.NODE_ENV === 'development') {
         mainWindow.webContents.openDevTools();
     }
+
+    mainWindow.loadFile('frontend/index.html');
 }
 
 app.on('window-all-closed', () => {
@@ -265,47 +291,34 @@ app.on('activate', async () => {
 ipcMain.handle('get-scrcpy-settings', async () => {
     try {
         await settingsManager.waitForInit();
-        log('收到获取scrcpy设置请求');
         const settings = await settingsManager.getScrcpySettings();
-        log('返回的设置:', JSON.stringify(settings, null, 2));
+        if (!settings) {
+            throw new Error('无法获取 scrcpy 设置');
+        }
         return settings;
     } catch (error) {
-        logError('获取scrcpy设置失败:', error);
-        throw error;
+        logError('获取 scrcpy 设置失败:', error);
+        return settingsManager.defaultSettings.scrcpy;
     }
 });
 
-ipcMain.handle('update-scrcpy-settings', async (event, settings) => {
+ipcMain.handle('saveScrcpySettings', async (event, settings) => {
     try {
-        await settingsManager.waitForInit();
-        log('收到更新scrcpy设置请求');
-        log('原始设置:', JSON.stringify(settings, null, 2));
-        
-        // 移除任何不可序列化的属性
-        const cleanSettings = {};
-        for (const [key, value] of Object.entries(settings)) {
-            if (value !== undefined && value !== null && typeof value !== 'function') {
-                cleanSettings[key] = value;
-            }
-        }
-        
-        log('清理后的设置:', JSON.stringify(cleanSettings, null, 2));
-        const updatedSettings = await settingsManager.updateScrcpySettings(cleanSettings);
-        log('设置更新成功');
-        return updatedSettings;
+        await settingsManager.saveScrcpySettings(settings);
+        return { success: true };
     } catch (error) {
-        logError('更新scrcpy设置失败:', error);
+        logError('更新 scrcpy 设置失败:', error);
         throw error;
     }
 });
 
 // 设备名称相关 IPC 处理
-ipcMain.handle('get-device-custom-names', async () => {
-    return settingsManager.getAllDeviceCustomNames();
+ipcMain.handle('get-device-display-names', async () => {
+    return settingsManager.getAllDeviceDisplayNames();
 });
 
-ipcMain.handle('set-device-custom-name', async (event, { deviceId, customName }) => {
-    return await settingsManager.setDeviceCustomName(deviceId, customName);
+ipcMain.handle('set-device-display-name', async (event, { ipPort, displayName }) => {
+    return await settingsManager.setDeviceDisplayName(ipPort, displayName);
 });
 
 // Scrcpy 相关 IPC 处理
@@ -366,5 +379,28 @@ ipcMain.handle('update-device-name', async (event, deviceId, newName) => {
     } catch (error) {
         console.error('更新设备名称失败:', error);
         return { success: false, message: error.message };
+    }
+});
+
+// 窗口控制事件处理
+ipcMain.handle('window-close', () => {
+    if (mainWindow) {
+        mainWindow.close();
+    }
+});
+
+ipcMain.handle('window-minimize', () => {
+    if (mainWindow) {
+        mainWindow.minimize();
+    }
+});
+
+ipcMain.handle('window-maximize', () => {
+    if (mainWindow) {
+        if (mainWindow.isMaximized()) {
+            mainWindow.unmaximize();
+        } else {
+            mainWindow.maximize();
+        }
     }
 }); 

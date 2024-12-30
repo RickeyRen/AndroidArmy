@@ -26,6 +26,7 @@
     </style>
 </head>
 <body>
+    <div class="titlebar"></div>
     <div id="app">
         <!-- 加载状态提示 -->
         <div class="loading-overlay" v-if="loadingDevices">
@@ -89,7 +90,7 @@
             <div class="device-list">
                 <!-- 设备网格 -->
                 <div class="device-grid">
-                    <div v-for="device in devices" :key="device.id" class="device-card">
+                    <div v-for="device in devices" :key="device.ip_port" class="device-card">
                         <!-- 设备卡片内容 -->
                         <div class="device-header">
                             <div class="device-icon">
@@ -99,7 +100,7 @@
                             <div class="device-title">
                                 <div class="device-name-container">
                                     <div v-if="!device.isEditing" class="device-name" @click="startEditingName(device)">
-                                        {{ device.name || device.id }}
+                                        {{ device.name || device.ip_port }}
                                     </div>
                                     <input
                                         v-else
@@ -110,7 +111,7 @@
                                         @keyup.enter="saveDeviceName(device)"
                                         @keyup.esc="cancelEditingName(device)"
                                         class="name-input"
-                                        :placeholder="device.id"
+                                        :placeholder="device.ip_port"
                                     >
                                 </div>
                                 <div class="device-status">
@@ -126,26 +127,26 @@
                             </div>
                             <div class="info-item">
                                 <i class="mdi mdi-android"></i>
-                                <span>Android {{ device.android }}</span>
+                                <span>Android {{ device.android_version }}</span>
                             </div>
                             <div class="info-item">
                                 <i class="mdi mdi-ip-network"></i>
-                                <span>{{ device.id }}</span>
+                                <span>{{ device.ip_port }}</span>
                             </div>
                         </div>
                         <div class="device-actions">
                             <template v-if="device.status === 'online'">
-                                <button @click="startScrcpy(device.id)" class="action-button">
+                                <button @click="startScrcpy(device.ip_port)" class="action-button">
                                     <span class="material-icons">cast</span>
                                     启动投屏
                                 </button>
-                                <button @click="disconnectDevice(device.id)" class="action-button danger">
+                                <button @click="disconnectDevice(device.ip_port)" class="action-button danger">
                                     <span class="material-icons">link_off</span>
                                     断开连接
                                 </button>
                             </template>
                             <template v-else>
-                                <button class="action-button connect full-width" @click="connectDevice(device.id)">
+                                <button class="action-button connect full-width" @click="connectDevice(device.ip_port)">
                                     <i class="material-icons">link</i>
                                     连接设备
                                 </button>
@@ -200,8 +201,8 @@
                         <h3><span class="mdi mdi-monitor-screenshot"></span> 投屏设置</h3>
                         <div class="settings-group-content">
                             <div class="setting-item">
-                                <label>最大比特率 (Kbps)</label>
-                                <input type="number" v-model.number="scrcpySettings.maxBitrate">
+                                <label>最大比特率 (Mbps)</label>
+                                <input type="number" v-model.number="scrcpySettings.videoBitrateKbps" @input="onBitrateInput" :value="scrcpySettings.videoBitrateKbps / 1000">
                             </div>
                             <div class="setting-item">
                                 <label>最大帧率</label>
@@ -215,22 +216,78 @@
                                 <label>窗口高度</label>
                                 <input type="number" v-model.number="scrcpySettings.screenHeight">
                             </div>
+                            <div class="setting-item">
+                                <label>最大尺寸</label>
+                                <input type="number" v-model.number="scrcpySettings.maxSize">
+                            </div>
+                            <div class="setting-item">
+                                <label>编码器名称</label>
+                                <select v-model="scrcpySettings.encoderName">
+                                    <option value="">默认</option>
+                                    <option value="h264">H.264</option>
+                                    <option value="h265">H.265 (HEVC)</option>
+                                    <option value="OMX.qcom.video.encoder.avc">高通 H.264</option>
+                                    <option value="OMX.qcom.video.encoder.hevc">高通 H.265</option>
+                                    <option value="OMX.MTK.VIDEO.ENCODER.AVC">联发科 H.264</option>
+                                    <option value="OMX.MTK.VIDEO.ENCODER.HEVC">联发科 H.265</option>
+                                    <option value="c2.android.avc.encoder">Android H.264</option>
+                                    <option value="c2.android.hevc.encoder">Android H.265</option>
+                                </select>
+                            </div>
+                            <div class="setting-item">
+                                <label>锁定视频方向</label>
+                                <select v-model.number="scrcpySettings.lockVideoOrientation">
+                                    <option value="-1">未锁定</option>
+                                    <option value="0">自然方向</option>
+                                    <option value="1">90度</option>
+                                    <option value="2">180度</option>
+                                    <option value="3">270度</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <div class="settings-group">
                         <h3><span class="mdi mdi-tune"></span> 显示选项</h3>
-                        <div class="settings-group-content">
-                            <div class="setting-item">
-                                <label>全屏显示</label>
-                                <input type="checkbox" v-model="scrcpySettings.fullscreen">
+                        <div class="settings-group-content settings-compact-grid">
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.fullscreen" id="fullscreen">
+                                <label for="fullscreen">全屏显示</label>
                             </div>
-                            <div class="setting-item">
-                                <label>无边框窗口</label>
-                                <input type="checkbox" v-model="scrcpySettings.borderless">
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.borderless" id="borderless">
+                                <label for="borderless">无边框窗口</label>
                             </div>
-                            <div class="setting-item">
-                                <label>窗口置顶</label>
-                                <input type="checkbox" v-model="scrcpySettings.alwaysOnTop">
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.alwaysOnTop" id="alwaysOnTop">
+                                <label for="alwaysOnTop">窗口置顶</label>
+                            </div>
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.turnScreenOff" id="turnScreenOff">
+                                <label for="turnScreenOff">关闭设备屏幕</label>
+                            </div>
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.stayAwake" id="stayAwake">
+                                <label for="stayAwake">保持设备唤醒</label>
+                            </div>
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.showTouches" id="showTouches">
+                                <label for="showTouches">显示触摸点</label>
+                            </div>
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.audioEnabled" id="audioEnabled">
+                                <label for="audioEnabled">启用音频</label>
+                            </div>
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.powerOffOnClose" id="powerOffOnClose">
+                                <label for="powerOffOnClose">断开时关闭屏幕</label>
+                            </div>
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.clipboardAutosync" id="clipboardAutosync">
+                                <label for="clipboardAutosync">剪贴板自动同步</label>
+                            </div>
+                            <div class="settings-compact-item">
+                                <input type="checkbox" v-model="scrcpySettings.shortcutKeysEnabled" id="shortcutKeysEnabled">
+                                <label for="shortcutKeysEnabled">启用快捷键</label>
                             </div>
                         </div>
                     </div>

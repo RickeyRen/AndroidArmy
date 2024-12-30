@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+    // 窗口控制
+    closeWindow: () => ipcRenderer.invoke('window-close'),
+    minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
+    maximizeWindow: () => ipcRenderer.invoke('window-maximize'),
+    
     // 设备管理
     getDevices: () => ipcRenderer.invoke('get-devices'),
     connectDevice: (deviceId) => ipcRenderer.invoke('connect-device', deviceId),
@@ -12,7 +17,7 @@ contextBridge.exposeInMainWorld('api', {
     
     // 设置管理
     getScrcpySettings: () => ipcRenderer.invoke('get-scrcpy-settings'),
-    saveScrcpySettings: (settings) => ipcRenderer.invoke('update-scrcpy-settings', settings),
+    saveScrcpySettings: (settings) => ipcRenderer.invoke('saveScrcpySettings', settings),
     
     // 设备列表刷新设置
     getDeviceListSettings: () => ipcRenderer.invoke('get-device-list-settings'),
@@ -31,5 +36,9 @@ contextBridge.exposeInMainWorld('api', {
     // 事件监听
     onDevicesUpdated: (callback) => {
         ipcRenderer.on('devices-updated', (event, devices) => callback(devices));
-    }
+    },
+    
+    // 设备名称管理
+    getDeviceDisplayNames: () => ipcRenderer.invoke('get-device-display-names'),
+    setDeviceDisplayName: (ipPort, displayName) => ipcRenderer.invoke('set-device-display-name', { ipPort, displayName }),
 }); 

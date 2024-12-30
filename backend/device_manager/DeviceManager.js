@@ -52,58 +52,85 @@ class DeviceManager extends EventEmitter {
 
     async updateDevices() {
         try {
+            // 清空当前设备列表
+            this.devices = [];
+            const currentDevices = [];
+            
+            // 获取 adb 设备列表
             const { stdout } = await execAsync('adb devices -l');
             const lines = stdout.split('\n').filter(line => line.trim());
             lines.shift(); // 移除第一行 "List of devices attached"
             
-            const currentDevices = [];
+            // 记录在线设备
+            const connectedDevices = new Set();
             
+            // 处理在线设备
             for (const line of lines) {
                 const parts = line.trim().split(/\s+/);
-                
                 if (parts.length >= 2) {
-                    const deviceId = parts[0];
+                    const ipPort = parts[0];
                     const status = parts[1];
-                    
-                    // 从数据库加载设备信息
-                    let savedDevice = await this.loadDeviceInfo(deviceId);
-                    const deviceName = savedDevice ? savedDevice.name : deviceId;
                     
                     if (status === 'device') {
                         try {
-                            const { stdout: model } = await execAsync(`adb -s ${deviceId} shell getprop ro.product.model`);
-                            const { stdout: brand } = await execAsync(`adb -s ${deviceId} shell getprop ro.product.brand`);
-                            const { stdout: version } = await execAsync(`adb -s ${deviceId} shell getprop ro.build.version.release`);
+                            const { stdout: model } = await execAsync(`adb -s ${ipPort} shell getprop ro.product.model`);
+                            const { stdout: brand } = await execAsync(`adb -s ${ipPort} shell getprop ro.product.brand`);
+                            const { stdout: version } = await execAsync(`adb -s ${ipPort} shell getprop ro.build.version.release`);
+                            
+                            // 从数据库加载设备信息
+                            let savedDevice = await this.loadDeviceInfo(ipPort);
+                            const displayName = savedDevice ? savedDevice.display_name : ipPort;
                             
                             const deviceInfo = {
-                                id: deviceId,
+                                ip_port: ipPort,
                                 model: model.trim() || 'Unknown Model',
                                 brand: brand.trim() || 'Unknown Brand',
-                                android: version.trim() || 'Unknown Version',
-                                name: deviceName,
+                                android_version: version.trim() || 'Unknown Version',
+                                display_name: displayName,
                                 status: 'online'
                             };
                             
                             currentDevices.push(deviceInfo);
+                            connectedDevices.add(ipPort);
                             // 保存设备信息到数据库
                             await this.saveDeviceInfo(deviceInfo);
                         } catch (error) {
-                            console.error(`获取设备 ${deviceId} 信息失败:`, error);
-                            currentDevices.push({
-                                id: deviceId,
-                                model: savedDevice?.model || 'Unknown Model',
-                                brand: savedDevice?.brand || 'Unknown Brand',
-                                android: savedDevice?.android || 'Unknown Version',
-                                name: deviceName,
-                                status: 'offline'
-                            });
+                            console.error(`获取设备 ${ipPort} 信息失败:`, error);
                         }
                     }
                 }
             }
             
+            // 从数据库加载所有设备
+            const allDevices = await new Promise((resolve, reject) => {
+                this.db.all('SELECT * FROM devices', [], (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                });
+            });
+            
+            // 添加数据库中的离线设备
+            for (const device of allDevices) {
+                if (!connectedDevices.has(device.ip_port)) {
+                    currentDevices.push({
+                        ip_port: device.ip_port,
+                        model: device.model || 'Unknown Model',
+                        brand: device.brand || 'Unknown Brand',
+                        android_version: device.android_version || 'Unknown Version',
+                        display_name: device.display_name || device.ip_port,
+                        status: 'offline'
+                    });
+                }
+            }
+            
+            // 更新内存中的设备列表
             this.devices = currentDevices;
+            
+            // 发送更新事件
             this.emit('devices-updated', currentDevices);
+            
+            console.log('当前设备列表:', JSON.stringify(currentDevices, null, 2));
+            
             return currentDevices;
         } catch (error) {
             console.error('更新设备列表失败:', error);
@@ -120,21 +147,21 @@ class DeviceManager extends EventEmitter {
         }
     }
 
-    async getDeviceInfo(deviceId) {
+    async getDeviceInfo(ipPort) {
         try {
-            const device = Array.from(this.devices.values()).find(d => d.id === deviceId);
+            const device = this.devices.find(d => d.ip_port === ipPort);
             if (!device) {
                 throw new Error('Device not found');
             }
             return device;
         } catch (error) {
-            console.error(`获取设备 ${deviceId} 信息失败:`, error);
+            console.error(`获取设备 ${ipPort} 信息失败:`, error);
             return {
-                id: deviceId,
+                ip_port: ipPort,
                 model: 'Unknown',
                 brand: 'Unknown',
-                android: 'Unknown',
-                name: deviceId,
+                android_version: 'Unknown',
+                display_name: ipPort,
                 status: 'offline'
             };
         }
@@ -178,12 +205,23 @@ class DeviceManager extends EventEmitter {
     // 新增方法：连接设备
     async connectDevice(ip, port = '5555') {
         try {
+            if (!ip) {
+                throw new Error('IP地址不能为空');
+            }
+
+            console.log('正在连接设备:', { ip, port });
             const { stdout } = await execAsync(`adb connect ${ip}:${port}`);
             console.log('设备连接结果:', stdout);
-            await this.updateDevices(); // 更新设备列表
+
+            // 等待一段时间，让设备状态更新
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // 更新设备列表
+            await this.updateDevices();
+
             return { success: true, message: stdout };
         } catch (error) {
-            console.error('设备连接失败:', error);
+            console.error('连接设备失败:', error);
             throw error;
         }
     }
@@ -191,13 +229,21 @@ class DeviceManager extends EventEmitter {
     // 新增方法：断开设备连接
     async disconnectDevice(deviceId) {
         try {
-            // 如果是网络设备（包含冒号），则使用 adb disconnect
-            if (deviceId.includes(':')) {
-                const { stdout } = await execAsync(`adb disconnect ${deviceId}`);
-                console.log('设备断开结果:', stdout);
+            if (!deviceId) {
+                throw new Error('设备ID不能为空');
             }
-            await this.updateDevices(); // 更新设备列表
-            return { success: true };
+
+            console.log('正在断开设备:', deviceId);
+            const { stdout } = await execAsync(`adb disconnect ${deviceId}`);
+            console.log('设备断开结果:', stdout);
+
+            // 等待一段时间，让设备状态更新
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // 更新设备列表
+            await this.updateDevices();
+
+            return { success: true, message: stdout };
         } catch (error) {
             console.error('断开设备失败:', error);
             throw error;
@@ -205,24 +251,41 @@ class DeviceManager extends EventEmitter {
     }
 
     // 新增方法：更新设备名称
-    async updateDeviceName(deviceId, newName) {
+    async updateDeviceName(ipPort, displayName) {
         try {
-            // 从数据库中获取设备
-            const device = await this.db.get('SELECT * FROM devices WHERE id = ?', deviceId);
+            console.log('正在更新设备名称:', ipPort, '->', displayName);
+            
+            // 检查设备是否存在
+            const device = await this.loadDeviceInfo(ipPort);
             if (!device) {
                 throw new Error('设备不存在');
             }
-
-            // 更新设备名称
-            await this.db.run('UPDATE devices SET name = ? WHERE id = ?', [newName, deviceId]);
             
-            // 更新内存中的设备名称
-            const deviceIndex = this.devices.findIndex(d => d.id === deviceId);
-            if (deviceIndex !== -1) {
-                this.devices[deviceIndex].name = newName;
+            // 更新设备信息
+            await new Promise((resolve, reject) => {
+                const sql = `UPDATE devices SET display_name = ? WHERE ip_port = ?`;
+                this.db.run(sql, [displayName, ipPort], function(err) {
+                    if (err) {
+                        console.error('更新设备名称失败:', err);
+                        reject(err);
+                        return;
+                    }
+                    
+                    console.log('更新结果:', this.changes, '行被修改');
+                    resolve(this.changes);
+                });
+            });
+            
+            // 更新内存中的设备信息
+            const deviceInMemory = this.devices.find(d => d.ip_port === ipPort);
+            if (deviceInMemory) {
+                deviceInMemory.display_name = displayName;
             }
 
-            return { deviceId, newName };
+            // 刷新设备列表
+            await this.updateDevices();
+
+            return { success: true, ipPort, displayName };
         } catch (error) {
             console.error('更新设备名称失败:', error);
             throw error;
@@ -232,25 +295,16 @@ class DeviceManager extends EventEmitter {
     initDatabase() {
         return new Promise((resolve, reject) => {
             this.db.serialize(() => {
-                // 删除旧表
-                this.db.run("DROP TABLE IF EXISTS settings", (err) => {
-                    if (err) {
-                        console.error('删除旧settings表失败:', err);
-                        reject(err);
-                        return;
-                    }
-                });
-
                 // 创建设备表
                 this.db.run(`
                     CREATE TABLE IF NOT EXISTS devices (
-                        id TEXT PRIMARY KEY,
-                        name TEXT,
+                        ip_port TEXT PRIMARY KEY,
+                        display_name TEXT,
                         brand TEXT,
                         model TEXT,
-                        android TEXT,
-                        status TEXT,
-                        last_connected TEXT
+                        android_version TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                 `, (err) => {
                     if (err) {
@@ -265,7 +319,9 @@ class DeviceManager extends EventEmitter {
                 this.db.run(`
                     CREATE TABLE IF NOT EXISTS settings (
                         id TEXT PRIMARY KEY,
-                        value TEXT NOT NULL
+                        value TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                 `, (err) => {
                     if (err) {
@@ -274,7 +330,6 @@ class DeviceManager extends EventEmitter {
                         return;
                     }
                     console.log('成功创建settings表');
-                    this.initDefaultSettings();
                     resolve();
                 });
             });
@@ -329,31 +384,45 @@ class DeviceManager extends EventEmitter {
         });
     }
 
-    saveDeviceInfo(device) {
-        const stmt = this.db.prepare(`
-            INSERT OR REPLACE INTO devices (id, name, brand, model, android, status, last_connected)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-        stmt.run(
-            device.id,
-            device.name || device.id,
-            device.brand || '',
-            device.model || '',
-            device.android || '',
-            device.status || 'offline',
-            new Date().toISOString()
-        );
-        stmt.finalize();
+    // 新增方法：加载设备信息
+    async loadDeviceInfo(ipPort) {
+        return new Promise((resolve, reject) => {
+            const sql = `SELECT * FROM devices WHERE ip_port = ?`;
+            this.db.get(sql, [ipPort], (err, row) => {
+                if (err) {
+                    console.error('加载设备信息失败:', err);
+                    reject(err);
+                    return;
+                }
+                resolve(row);
+            });
+        });
     }
 
-    loadDeviceInfo(deviceId) {
+    // 新增方法：保存设备信息
+    async saveDeviceInfo(device) {
         return new Promise((resolve, reject) => {
-            this.db.get(
-                'SELECT * FROM devices WHERE id = ?',
-                [deviceId],
-                (err, row) => {
-                    if (err) reject(err);
-                    else resolve(row);
+            const sql = `
+                INSERT OR REPLACE INTO devices 
+                (ip_port, model, brand, android_version, display_name) 
+                VALUES (?, ?, ?, ?, ?)
+            `;
+            this.db.run(
+                sql, 
+                [
+                    device.ip_port,
+                    device.model,
+                    device.brand,
+                    device.android_version,
+                    device.display_name
+                ],
+                function(err) {
+                    if (err) {
+                        console.error('保存设备信息失败:', err);
+                        reject(err);
+                        return;
+                    }
+                    resolve(this.lastID);
                 }
             );
         });

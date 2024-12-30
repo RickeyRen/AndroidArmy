@@ -1,15 +1,7 @@
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
-const fs = require('fs/promises');
-
-// 创建日志函数
-function log(...args) {
-    console.log(new Date().toISOString(), ...args);
-}
-
-function logError(...args) {
-    console.error(new Date().toISOString(), ...args);
-}
+const sqlite3 = require('sqlite3');
+const fs = require('fs').promises;
+const { log, logError } = require('../utils/logger');
 
 class SettingsManager {
     constructor() {
@@ -17,6 +9,35 @@ class SettingsManager {
         this.db = null;
         this.isInitializing = false;
         this.initPromise = null;
+        this.retryCount = 0;
+        this.maxRetries = 3;
+        this.defaultSettings = {
+            scrcpy: {
+                maxBitrate: 2000000,
+                maxFps: 30,
+                screenWidth: 800,
+                screenHeight: 600,
+                turnScreenOff: true,
+                stayAwake: true,
+                showTouches: false,
+                fullscreen: false,
+                borderless: true,
+                alwaysOnTop: false,
+                audioEnabled: false,
+                videoBitrateKbps: 2000,
+                maxSize: 0,
+                lockVideoOrientation: -1,
+                encoderName: '',
+                powerOffOnClose: false,
+                clipboardAutosync: true,
+                shortcutKeysEnabled: true
+            },
+            deviceList: {
+                refreshMode: 'smart',
+                refreshInterval: 5000,
+                smartRefreshEvents: ['connect', 'disconnect', 'pair']
+            }
+        };
         this.initializeDatabase();
     }
 
@@ -37,7 +58,18 @@ class SettingsManager {
                 resolve();
             } catch (error) {
                 logError('初始化数据库失败:', error);
-                reject(error);
+                if (this.retryCount < this.maxRetries) {
+                    this.retryCount++;
+                    logError(`重试初始化数据库 (${this.retryCount}/${this.maxRetries})...`);
+                    this.isInitializing = false;
+                    setTimeout(() => {
+                        this.initializeDatabase()
+                            .then(resolve)
+                            .catch(reject);
+                    }, 1000 * this.retryCount);
+                } else {
+                    reject(error);
+                }
             } finally {
                 this.isInitializing = false;
             }
@@ -49,48 +81,64 @@ class SettingsManager {
     async _connectToDatabase() {
         if (this.db) {
             try {
-                // 测试连接是否有效
                 await this._rawQuery('SELECT 1');
-                return; // 连接有效，直接返回
+                return;
             } catch (error) {
-                // 连接无效，关闭它
                 try {
                     await new Promise((resolve) => this.db.close(() => resolve()));
                 } catch (e) {
-                    // 忽略关闭错误
+                    logError('关闭无效连接时出错:', e);
                 }
                 this.db = null;
             }
         }
 
-        // 创建新连接
         return new Promise((resolve, reject) => {
+            log('尝试连接数据库:', this.dbPath);
+            
             this.db = new sqlite3.Database(
                 this.dbPath,
                 sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
                 async (err) => {
                     if (err) {
                         logError('连接数据库失败:', err);
+                        this.db = null;
                         reject(err);
                         return;
                     }
 
                     try {
                         log('成功连接到数据库');
-                        this.db.configure('busyTimeout', 3000);
+                        this.db.configure('busyTimeout', 30000);
                         await this._rawQuery('PRAGMA journal_mode = WAL');
                         await this._rawQuery('PRAGMA synchronous = NORMAL');
+                        await this._rawQuery('PRAGMA foreign_keys = ON');
+                        await this._rawQuery('PRAGMA temp_store = MEMORY');
+                        await this._rawQuery('PRAGMA cache_size = -2000');
+                        await this._rawQuery('PRAGMA busy_timeout = 30000');
+                        await this._rawQuery('PRAGMA locking_mode = NORMAL');
+                        log('数据库配置完成');
                         resolve();
                     } catch (error) {
                         logError('配置数据库失败:', error);
+                        try {
+                            await new Promise((resolve) => this.db.close(() => resolve()));
+                        } catch (e) {
+                            logError('关闭失败的连接时出错:', e);
+                        }
+                        this.db = null;
                         reject(error);
                     }
                 }
             );
+
+            this.db.on('error', (error) => {
+                logError('数据库连接错误:', error);
+                this.db = null;
+            });
         });
     }
 
-    // 基础查询方法，不包含重连逻辑
     async _rawQuery(sql, params = []) {
         return new Promise((resolve, reject) => {
             this.db.run(sql, params, function(err) {
@@ -100,7 +148,6 @@ class SettingsManager {
         });
     }
 
-    // 基础查询方法（SELECT），不包含重连逻辑
     async _rawQueryGet(sql, params = []) {
         return new Promise((resolve, reject) => {
             this.db.get(sql, params, (err, row) => {
@@ -110,10 +157,19 @@ class SettingsManager {
         });
     }
 
-    // 包含重试和重连逻辑的查询方法
+    async _rawQueryAll(sql, params = []) {
+        return new Promise((resolve, reject) => {
+            this.db.all(sql, params, (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
+    }
+
     async query(sql, params = []) {
-        const maxRetries = 3;
+        const maxRetries = 5;
         let lastError = null;
+        let delay = 1000;
 
         for (let i = 0; i < maxRetries; i++) {
             try {
@@ -121,8 +177,10 @@ class SettingsManager {
                 return await this._rawQuery(sql, params);
             } catch (error) {
                 lastError = error;
-                if (error.code === 'SQLITE_BUSY') {
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                if (error.code === 'SQLITE_BUSY' || error.code === 'SQLITE_LOCKED') {
+                    log(`数据库忙，等待 ${delay}ms 后重试 (${i + 1}/${maxRetries})...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
                     continue;
                 }
                 if (i === maxRetries - 1) throw error;
@@ -131,10 +189,10 @@ class SettingsManager {
         throw lastError;
     }
 
-    // 包含重试和重连逻辑的查询方法（SELECT）
     async queryGet(sql, params = []) {
-        const maxRetries = 3;
+        const maxRetries = 5;
         let lastError = null;
+        let delay = 1000;
 
         for (let i = 0; i < maxRetries; i++) {
             try {
@@ -142,8 +200,33 @@ class SettingsManager {
                 return await this._rawQueryGet(sql, params);
             } catch (error) {
                 lastError = error;
-                if (error.code === 'SQLITE_BUSY') {
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                if (error.code === 'SQLITE_BUSY' || error.code === 'SQLITE_LOCKED') {
+                    log(`数据库忙，等待 ${delay}ms 后重试 (${i + 1}/${maxRetries})...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                    continue;
+                }
+                if (i === maxRetries - 1) throw error;
+            }
+        }
+        throw lastError;
+    }
+
+    async queryAll(sql, params = []) {
+        const maxRetries = 5;
+        let lastError = null;
+        let delay = 1000;
+
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                await this._connectToDatabase();
+                return await this._rawQueryAll(sql, params);
+            } catch (error) {
+                lastError = error;
+                if (error.code === 'SQLITE_BUSY' || error.code === 'SQLITE_LOCKED') {
+                    log(`数据库忙，等待 ${delay}ms 后重试 (${i + 1}/${maxRetries})...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
                     continue;
                 }
                 if (i === maxRetries - 1) throw error;
@@ -153,344 +236,212 @@ class SettingsManager {
     }
 
     async _initTables() {
+        let inTransaction = false;
         try {
             log('开始初始化数据库表...');
             
-            // 创建设置表
-            await this._rawQuery(`
+            // 等待任何现有的事务完成
+            await this.query('PRAGMA busy_timeout = 60000');
+            await this.query('PRAGMA journal_mode = WAL');
+            await this.query('PRAGMA synchronous = NORMAL');
+            
+            const tables = await this.queryAll(`
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name IN ('settings', 'devices')
+            `);
+            log('现有的表:', tables.map(t => t.name));
+
+            // 创建 settings 表
+            await this.query(`
                 CREATE TABLE IF NOT EXISTS settings (
                     id TEXT PRIMARY KEY,
-                    value TEXT
+                    value TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             `);
-            log('成功创建或确认settings表存在');
+            log('成功创建 settings 表');
 
-            // 创建设备表
-            await this._rawQuery(`
+            // 创建 devices 表
+            await this.query(`
                 CREATE TABLE IF NOT EXISTS devices (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
+                    ip_port TEXT PRIMARY KEY,
+                    display_name TEXT,
                     brand TEXT,
                     model TEXT,
-                    android TEXT,
-                    status TEXT,
-                    custom_name TEXT,
-                    last_connected TEXT
+                    android_version TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             `);
-            log('成功创建或确认devices表存在');
+            log('成功创建 devices 表');
+
+            // 获取所有设置
+            const settings = await this.queryAll(`
+                SELECT id, value FROM settings
+            `);
 
             // 检查并初始化默认设置
-            await this._initDefaultSettings();
-            
-            log('数据库表初始化完成');
+            const defaultSettings = {
+                scrcpy: {
+                    maxBitrate: 2000000,
+                    maxFps: 30,
+                    screenWidth: 800,
+                    screenHeight: 600,
+                    turnScreenOff: true,
+                    stayAwake: true,
+                    showTouches: false,
+                    fullscreen: false,
+                    borderless: true,
+                    alwaysOnTop: false,
+                    audioEnabled: false,
+                    videoBitrateKbps: 2000,
+                    maxSize: 0,
+                    lockVideoOrientation: -1,
+                    encoderName: '',
+                    powerOffOnClose: true,
+                    clipboardAutosync: true,
+                    shortcutKeysEnabled: true
+                },
+                deviceList: {
+                    refreshMode: 'smart',
+                    refreshInterval: 5000,
+                    smartRefreshEvents: ['connect', 'disconnect', 'pair']
+                }
+            };
+
+            // 开始事务
+            await this.query('BEGIN TRANSACTION');
+            inTransaction = true;
+
+            for (const [settingId, defaultValue] of Object.entries(defaultSettings)) {
+                const existingSetting = settings.find(s => s.id === settingId);
+                if (!existingSetting) {
+                    await this.query(
+                        'INSERT INTO settings (id, value) VALUES (?, ?)',
+                        [settingId, JSON.stringify(defaultValue)]
+                    );
+                }
+            }
+
+            // 提交事务
+            await this.query('COMMIT');
+            inTransaction = false;
+
         } catch (error) {
             logError('初始化数据库表失败:', error);
-            throw error;
-        }
-    }
-
-    async _initDefaultSettings() {
-        try {
-            // 检查是否需要初始化默认设置
-            const scrcpyRow = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'scrcpy'");
-            const deviceListRow = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'deviceList'");
-
-            log('当前数据库中的设置状态：', {
-                scrcpyExists: !!scrcpyRow,
-                deviceListExists: !!deviceListRow
-            });
-
-            // 只在设置完全不存在时初始化
-            if (!scrcpyRow) {
-                log('scrcpy设置不存在，初始化默认值');
-                await this.initScrcpySettings();
+            if (inTransaction) {
+                try {
+                    await this.query('ROLLBACK');
+                } catch (rollbackError) {
+                    logError('回滚事务失败:', rollbackError);
+                }
             }
-
-            if (!deviceListRow) {
-                log('deviceList设置不存在，初始化默认值');
-                await this.initDeviceListSettings();
-            }
-        } catch (error) {
-            logError('初始化默认设置失败:', error);
             throw error;
         }
     }
 
-    // 等待初始化完成的方法
-    async waitForInit() {
-        return this.initPromise;
-    }
-
-    // 安全关闭数据库
-    async close() {
-        if (this.db) {
-            return new Promise((resolve, reject) => {
-                this.db.close((err) => {
-                    if (err) {
-                        logError('关闭数据库失败:', err);
-                        reject(err);
-                    } else {
-                        log('数据库已安全关闭');
-                        this.db = null;
-                        resolve();
-                    }
-                });
-            });
-        }
-    }
-
-    async initScrcpySettings() {
-        const defaultSettings = {
-            maxBitrate: 2000000,
-            maxFps: 30,
-            screenWidth: 800,
-            screenHeight: 600,
-            turnScreenOff: true,
-            stayAwake: true,
-            showTouches: false,
-            fullscreen: false,
-            borderless: true,
-            alwaysOnTop: false,
-            audioEnabled: false,
-            videoBitrateKbps: 2000,
-            maxSize: 0,
-            lockVideoOrientation: -1,
-            encoderName: '',
-            powerOffOnClose: true,
-            clipboardAutosync: true,
-            shortcutKeysEnabled: true
-        };
-
+    async validateSettings() {
+        log('验证应用程序设置...');
         try {
-            log('开始初始化scrcpy默认设置...');
-            await this._rawQuery(
-                "INSERT OR REPLACE INTO settings (id, value) VALUES ('scrcpy', ?)",
-                [JSON.stringify(defaultSettings)]
-            );
-            log('成功插入默认 scrcpy 设置');
-        } catch (error) {
-            logError('初始化scrcpy默认设置失败:', error);
-            throw error;
-        }
-    }
+            const scrcpySettings = await this.getScrcpySettings();
+            log('当前scrcpy设置:', scrcpySettings);
 
-    async initDeviceListSettings() {
-        const defaultDeviceListSettings = {
-            refreshMode: 'smart',
-            refreshInterval: 5000,
-            smartRefreshEvents: ['connect', 'disconnect', 'pair']
-        };
-
-        try {
-            log('开始初始化设备列表默认设置...');
-            await this._rawQuery(
-                "INSERT OR REPLACE INTO settings (id, value) VALUES ('deviceList', ?)",
-                [JSON.stringify(defaultDeviceListSettings)]
-            );
-            log('成功插入默认设备列表设置');
+            const deviceListSettings = await this.getDeviceListSettings();
+            log('当前设备列表设置:', deviceListSettings);
         } catch (error) {
-            logError('初始化设备列表默认设置失败:', error);
+            logError('验证设置失败:', error);
             throw error;
         }
     }
 
     async getScrcpySettings() {
         try {
-            log('开始获取scrcpy设置...');
-            const row = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'scrcpy'");
-            
+            const row = await this.queryGet('SELECT value FROM settings WHERE id = ?', ['scrcpy']);
             if (row) {
-                try {
-                    const settings = JSON.parse(row.value);
-                    log('获取到的设置:', JSON.stringify(settings, null, 2));
-                    return settings;
-                } catch (error) {
-                    logError('解析设置JSON失败:', error);
-                    throw error;
-                }
-            } else {
-                log('未找到设置，返回null');
-                return null;
+                return JSON.parse(row.value);
             }
+            return null;
         } catch (error) {
-            logError('获取设置失败:', error);
+            logError('获取 scrcpy 设置失败:', error);
             throw error;
         }
     }
 
-    async updateScrcpySettings(newSettings) {
-        let transaction = false;
+    async getDeviceListSettings() {
         try {
-            if (!newSettings) {
-                const error = new Error('新设置为空');
-                logError(error);
-                throw error;
+            const row = await this.queryGet('SELECT value FROM settings WHERE id = ?', ['deviceList']);
+            if (row) {
+                return JSON.parse(row.value);
             }
-
-            log('开始更新scrcpy设置...');
-            
-            // 定义允许的设置字段和类型
-            const allowedSettings = {
-                maxBitrate: 'number',
-                maxFps: 'number',
-                screenWidth: 'number',
-                screenHeight: 'number',
-                turnScreenOff: 'boolean',
-                stayAwake: 'boolean',
-                showTouches: 'boolean',
-                fullscreen: 'boolean',
-                borderless: 'boolean',
-                alwaysOnTop: 'boolean',
-                audioEnabled: 'boolean',
-                videoBitrateKbps: 'number',
-                maxSize: 'number',
-                lockVideoOrientation: 'number',
-                encoderName: 'string',
-                powerOffOnClose: 'boolean',
-                clipboardAutosync: 'boolean',
-                shortcutKeysEnabled: 'boolean'
-            };
-
-            // 清理和验证设置对象
-            const cleanSettings = {};
-            for (const [key, expectedType] of Object.entries(allowedSettings)) {
-                if (key in newSettings) {
-                    const value = newSettings[key];
-                    const actualType = typeof value;
-                    if (actualType === expectedType) {
-                        cleanSettings[key] = value;
-                    } else if (expectedType === 'number' && actualType === 'string') {
-                        // 尝试转换字符串到数字
-                        const numValue = Number(value);
-                        if (!isNaN(numValue)) {
-                            cleanSettings[key] = numValue;
-                        } else {
-                            throw new Error(`设置项 ${key} 的值 "${value}" 无法转换为数字`);
-                        }
-                    } else {
-                        throw new Error(`设置项 ${key} 的类型错误，期望 ${expectedType}，实际 ${actualType}`);
-                    }
-                }
-            }
-
-            log('清理后的设置:', JSON.stringify(cleanSettings, null, 2));
-
-            // 在更新之前验证数据库连接
-            await this.waitForInit();
-            
-            // 添加数据库文件检查
-            const dbPath = path.join(__dirname, '../../database/devices.db');
-            try {
-                await fs.access(dbPath, fs.constants.W_OK);
-                log('数据库文件可写');
-            } catch (error) {
-                logError('数据库文件访问错误:', error);
-                throw new Error('数据库文件无法访问或写入');
-            }
-
-            // 检查是否已在事务中
-            const inTransaction = await this._rawQueryGet('SELECT 1 FROM sqlite_master LIMIT 1');
-            if (!inTransaction) {
-                // 开始事务
-                await this._rawQuery('BEGIN TRANSACTION');
-                transaction = true;
-            }
-
-            try {
-                // 在事务中获取当前设置
-                const currentSettings = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'scrcpy'");
-                let parsedCurrentSettings = null;
-                if (currentSettings) {
-                    try {
-                        parsedCurrentSettings = JSON.parse(currentSettings.value);
-                    } catch (e) {
-                        log('解析当前设置失败，将使用默认值');
-                        parsedCurrentSettings = await this.getDefaultScrcpySettings();
-                    }
-                } else {
-                    log('未找到当前设置，将使用默认值');
-                    parsedCurrentSettings = await this.getDefaultScrcpySettings();
-                }
-
-                // 合并当前设置和新设置
-                const mergedSettings = {
-                    ...parsedCurrentSettings,  // 首先使用所有当前设置
-                    ...cleanSettings          // 然后覆盖新的设置
-                };
-
-                // 确保所有必需的字段都存在
-                const defaultSettings = await this.getDefaultScrcpySettings();
-                for (const key of Object.keys(defaultSettings)) {
-                    if (!(key in mergedSettings)) {
-                        mergedSettings[key] = defaultSettings[key];
-                    }
-                }
-
-                const settingsJson = JSON.stringify(mergedSettings);
-
-                await this._rawQuery(
-                    "INSERT OR REPLACE INTO settings (id, value) VALUES ('scrcpy', ?)",
-                    [settingsJson]
-                );
-
-                // 验证设置是否正确保存
-                const verifyRow = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'scrcpy'");
-                if (!verifyRow) {
-                    throw new Error('设置保存后无法验证');
-                }
-
-                const verifySettings = JSON.parse(verifyRow.value);
-                
-                // 确保所有必需的字段都存在且值匹配
-                const defaultKeys = Object.keys(defaultSettings);
-                const isEqual = defaultKeys.every(key => {
-                    if (key in mergedSettings) {
-                        if (typeof mergedSettings[key] === 'object' && mergedSettings[key] !== null) {
-                            return JSON.stringify(verifySettings[key]) === JSON.stringify(mergedSettings[key]);
-                        }
-                        return verifySettings[key] === mergedSettings[key];
-                    }
-                    return false;
-                });
-
-                if (!isEqual) {
-                    log('验证失败：', {
-                        verified: verifySettings,
-                        merged: mergedSettings
-                    });
-                    throw new Error('设置保存后验证不匹配');
-                }
-
-                // 只有当我们开启了事务时才提交
-                if (transaction) {
-                    await this._rawQuery('COMMIT');
-                    log('scrcpy设置更新成功，事务已提交');
-                } else {
-                    log('scrcpy设置更新成功');
-                }
-                
-                return mergedSettings;
-            } catch (error) {
-                // 只有当我们开启了事务时才回滚
-                if (transaction) {
-                    await this._rawQuery('ROLLBACK');
-                }
-                throw error;
-            }
+            return null;
         } catch (error) {
-            logError('更新scrcpy设置失败:', error);
+            logError('获取设备列表设置失败:', error);
             throw error;
         }
     }
 
-    async getDeviceCustomName(deviceId) {
+    async saveScrcpySettings(settings) {
         try {
-            const row = await this._rawQueryGet(
-                "SELECT name FROM devices WHERE id = ?",
-                [deviceId]
+            await this.query(
+                'UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [JSON.stringify(settings), 'scrcpy']
             );
-            return row ? row.name : '';
+        } catch (error) {
+            logError('更新 scrcpy 设置失败:', error);
+            throw error;
+        }
+    }
+
+    async updateDeviceListSettings(settings) {
+        try {
+            await this.query(
+                'UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [JSON.stringify(settings), 'deviceList']
+            );
+        } catch (error) {
+            logError('更新设备列表设置失败:', error);
+            throw error;
+        }
+    }
+
+    async waitForInit() {
+        if (!this.initPromise) {
+            await this.initializeDatabase();
+        }
+        return this.initPromise;
+    }
+
+    async close() {
+        if (this.db) {
+            try {
+                await new Promise((resolve, reject) => {
+                    this.db.close((err) => {
+                        if (err) {
+                            logError('关闭数据库时出错:', err);
+                            reject(err);
+                        } else {
+                            log('数据库已安全关闭');
+                            resolve();
+                        }
+                    });
+                });
+            } catch (error) {
+                logError('关闭数据库失败:', error);
+                throw error;
+            } finally {
+                this.db = null;
+            }
+        }
+    }
+
+    async getDeviceCustomName(ipPort) {
+        try {
+            const row = await this.queryGet(
+                'SELECT display_name FROM devices WHERE ip_port = ?',
+                [ipPort]
+            );
+            return row ? row.display_name : null;
         } catch (error) {
             logError('获取设备名称失败:', error);
             throw error;
@@ -499,269 +450,69 @@ class SettingsManager {
 
     async getAllDeviceCustomNames() {
         try {
-            const rows = await new Promise((resolve, reject) => {
-                this.db.all("SELECT id, name FROM devices", (err, rows) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        const names = {};
-                        rows.forEach(row => {
-                            if (row.name) {
-                                names[row.id] = row.name;
-                            }
-                        });
-                        resolve(names);
-                    }
-                });
+            const rows = await this.queryAll("SELECT id, custom_name FROM devices WHERE custom_name IS NOT NULL");
+            const names = {};
+            rows.forEach(row => {
+                names[row.id] = row.custom_name;
             });
-            return rows;
+            return names;
         } catch (error) {
             logError('获取所有设备名称失败:', error);
-            throw error;
+            return {};
         }
     }
 
-    async setDeviceCustomName(deviceId, customName) {
+    async setDeviceCustomName(ipPort, displayName) {
         try {
-            await this._rawQuery(
-                'INSERT OR REPLACE INTO devices (id, name) VALUES (?, ?)',
-                [deviceId, customName]
+            await this.query(
+                'INSERT OR REPLACE INTO devices (ip_port, display_name, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+                [ipPort, displayName]
             );
-            return customName;
+            log('设备名称已更新:', { ipPort, displayName });
         } catch (error) {
             logError('更新设备名称失败:', error);
             throw error;
         }
     }
 
-    // 获取设备列表刷新设置
-    async getDeviceListSettings() {
+    async getDeviceDisplayName(ipPort) {
         try {
-            log('开始获取设备列表刷新设置...');
-            const row = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'deviceList'");
-            
-            if (row) {
-                try {
-                    const settings = JSON.parse(row.value);
-                    log('获取到的设备列表设置:', JSON.stringify(settings, null, 2));
-                    return settings;
-                } catch (error) {
-                    logError('解析设备列表设置JSON失败:', error);
-                    throw error;
-                }
-            } else {
-                log('未找到设备列表设置，创建并保存默认值');
-                const defaultSettings = {
-                    refreshMode: 'smart',
-                    refreshInterval: 5000,
-                    smartRefreshEvents: ['connect', 'disconnect', 'pair']
-                };
-                
-                // 保存默认设置到数据库
-                await this._rawQuery(
-                    "INSERT OR REPLACE INTO settings (id, value) VALUES ('deviceList', ?)",
-                    [JSON.stringify(defaultSettings)]
-                );
-                
-                return defaultSettings;
-            }
+            const row = await this.queryGet(
+                "SELECT display_name FROM devices WHERE ip_port = ?",
+                [ipPort]
+            );
+            return row ? row.display_name : null;
         } catch (error) {
-            logError('获取设备列表设置失败:', error);
-            throw error;
+            logError('获取设备显示名称失败:', error);
+            return null;
         }
     }
 
-    // 更新设备列表刷新设置
-    async updateDeviceListSettings(newSettings) {
-        let transaction = false;
+    async getAllDeviceDisplayNames() {
         try {
-            if (!newSettings) {
-                const error = new Error('新设备列表设置为空');
-                logError(error);
-                throw error;
-            }
-
-            log('开始更新设备列表设置...');
-            log('原始设置:', JSON.stringify(newSettings, null, 2));
-
-            // 定义允许的设置字段和类型
-            const allowedSettings = {
-                refreshMode: 'string',
-                refreshInterval: 'number',
-                smartRefreshEvents: 'object' // 数组也是object类型
-            };
-
-            // 验证refreshMode的有效值
-            const validRefreshModes = ['auto', 'smart', 'manual'];
-
-            // 清理和验证设置对象
-            const cleanSettings = {};
-            
-            // 验证和清理refreshMode
-            if ('refreshMode' in newSettings) {
-                const mode = newSettings.refreshMode;
-                if (typeof mode === 'string' && validRefreshModes.includes(mode)) {
-                    cleanSettings.refreshMode = mode;
-                } else {
-                    throw new Error(`无效的刷新模式: ${mode}`);
-                }
-            }
-
-            // 验证和清理refreshInterval
-            if ('refreshInterval' in newSettings) {
-                const interval = Number(newSettings.refreshInterval);
-                if (!isNaN(interval) && interval >= 1000) {
-                    cleanSettings.refreshInterval = interval;
-                } else {
-                    throw new Error('刷新间隔必须是大于等于1000的数字');
-                }
-            }
-
-            // 验证和清理smartRefreshEvents
-            if ('smartRefreshEvents' in newSettings) {
-                const events = newSettings.smartRefreshEvents;
-                if (Array.isArray(events)) {
-                    const validEvents = ['connect', 'disconnect', 'pair'];
-                    const cleanEvents = events.filter(event => 
-                        typeof event === 'string' && validEvents.includes(event)
-                    );
-                    cleanSettings.smartRefreshEvents = cleanEvents;
-                } else {
-                    throw new Error('smartRefreshEvents必须是数组');
-                }
-            }
-
-            log('清理后的设置:', JSON.stringify(cleanSettings, null, 2));
-
-            // 检查是否已在事务中
-            const inTransaction = await this._rawQueryGet('SELECT 1 FROM sqlite_master LIMIT 1');
-            if (!inTransaction) {
-                // 开始事务
-                await this._rawQuery('BEGIN TRANSACTION');
-                transaction = true;
-            }
-
-            try {
-                // 在事务中获取当前设置
-                const currentSettings = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'deviceList'");
-                let parsedCurrentSettings = null;
-                if (currentSettings) {
-                    try {
-                        parsedCurrentSettings = JSON.parse(currentSettings.value);
-                    } catch (e) {
-                        log('解析当前设置失败，将使用默认值');
-                        parsedCurrentSettings = await this.getDefaultDeviceListSettings();
-                    }
-                } else {
-                    log('未找到当前设置，将使用默认值');
-                    parsedCurrentSettings = await this.getDefaultDeviceListSettings();
-                }
-
-                // 合并设置
-                const mergedSettings = {
-                    ...parsedCurrentSettings,
-                    ...cleanSettings
-                };
-
-                // 确保所有必需的字段都存在
-                const defaultSettings = await this.getDefaultDeviceListSettings();
-                for (const key of Object.keys(defaultSettings)) {
-                    if (!(key in mergedSettings)) {
-                        mergedSettings[key] = defaultSettings[key];
-                    }
-                }
-
-                const settingsJson = JSON.stringify(mergedSettings);
-                await this._rawQuery(
-                    "INSERT OR REPLACE INTO settings (id, value) VALUES ('deviceList', ?)",
-                    [settingsJson]
-                );
-
-                // 验证设置是否正确保存
-                const verifyRow = await this._rawQueryGet("SELECT value FROM settings WHERE id = 'deviceList'");
-                if (!verifyRow) {
-                    throw new Error('设置保存后无法验证');
-                }
-
-                const verifySettings = JSON.parse(verifyRow.value);
-                
-                // 确保所有必需的字段都存在且值匹配
-                const defaultKeys = Object.keys(defaultSettings);
-                const isEqual = defaultKeys.every(key => {
-                    if (key in mergedSettings) {
-                        if (Array.isArray(mergedSettings[key])) {
-                            return JSON.stringify([...verifySettings[key]].sort()) === 
-                                   JSON.stringify([...mergedSettings[key]].sort());
-                        }
-                        if (typeof mergedSettings[key] === 'object' && mergedSettings[key] !== null) {
-                            return JSON.stringify(verifySettings[key]) === JSON.stringify(mergedSettings[key]);
-                        }
-                        return verifySettings[key] === mergedSettings[key];
-                    }
-                    return false;
-                });
-
-                if (!isEqual) {
-                    log('验证失败：', {
-                        verified: verifySettings,
-                        merged: mergedSettings
-                    });
-                    throw new Error('设置保存后验证不匹配');
-                }
-
-                // 只有当我们开启了事务时才提交
-                if (transaction) {
-                    await this._rawQuery('COMMIT');
-                    log('设备列表设置更新成功，事务已提交');
-                } else {
-                    log('设备列表设置更新成功');
-                }
-                
-                return mergedSettings;
-            } catch (error) {
-                // 只有当我们开启了事务时才回滚
-                if (transaction) {
-                    await this._rawQuery('ROLLBACK');
-                }
-                throw error;
-            }
+            const rows = await this.queryAll("SELECT ip_port, display_name FROM devices WHERE display_name IS NOT NULL");
+            const names = {};
+            rows.forEach(row => {
+                names[row.ip_port] = row.display_name;
+            });
+            return names;
         } catch (error) {
-            logError('更新设备列表设置失败:', error);
-            throw error;
+            logError('获取所有设备显示名称失败:', error);
+            return {};
         }
     }
 
-    // 获取默认的scrcpy设置
-    async getDefaultScrcpySettings() {
-        return {
-            maxBitrate: 2000000,
-            maxFps: 30,
-            screenWidth: 800,
-            screenHeight: 600,
-            turnScreenOff: true,
-            stayAwake: true,
-            showTouches: false,
-            fullscreen: false,
-            borderless: true,
-            alwaysOnTop: false,
-            audioEnabled: false,
-            videoBitrateKbps: 2000,
-            maxSize: 0,
-            lockVideoOrientation: -1,
-            encoderName: '',
-            powerOffOnClose: true,
-            clipboardAutosync: true,
-            shortcutKeysEnabled: true
-        };
-    }
-
-    // 获取默认的设备列表设置
-    async getDefaultDeviceListSettings() {
-        return {
-            refreshMode: 'smart',
-            refreshInterval: 5000,
-            smartRefreshEvents: ['connect', 'disconnect', 'pair']
-        };
+    async setDeviceDisplayName(ipPort, displayName) {
+        try {
+            await this.query(
+                'INSERT OR REPLACE INTO devices (ip_port, display_name) VALUES (?, ?)',
+                [ipPort, displayName]
+            );
+            return displayName;
+        } catch (error) {
+            logError('更新设备显示名称失败:', error);
+            throw error;
+        }
     }
 }
 

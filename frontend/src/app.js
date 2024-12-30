@@ -6,10 +6,7 @@ const app = createApp({
             devices: [],
             connectedDevices: new Set(),
             selectedDevices: [],
-            scripts: [],
-            activeScripts: [],
             currentCommand: '',
-            scriptFile: null,
             notifications: [],
             notificationId: 0,
             connectForm: {
@@ -54,23 +51,147 @@ const app = createApp({
             }
         };
     },
+
     async created() {
-        // 在创建时就开始加载设置
-        try {
-            const settings = await window.api.getScrcpySettings();
-            if (settings) {
-                this.scrcpySettings = settings;
-            }
-            
-            const deviceListSettings = await window.api.getDeviceListSettings();
-            if (deviceListSettings) {
-                this.deviceListSettings = deviceListSettings;
-            }
-        } catch (error) {
-            console.error('加载设置失败:', error);
+        // 初始化设置
+        await this.loadSettings();
+        
+        // 加载设备列表
+        await this.loadDevices();
+        
+        // 设置自动刷新
+        if (this.deviceListSettings.refreshMode !== 'manual') {
+            this.refreshInterval = setInterval(() => {
+                this.refreshDevices();
+            }, this.deviceListSettings.refreshInterval);
+        }
+        
+        // 监听设备更新事件
+        window.api.onDevicesUpdated(async (devices) => {
+            console.log('收到设备更新事件:', devices);
+            await this.loadDevices();
+        });
+    },
+
+    beforeDestroy() {
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
         }
     },
+
     methods: {
+        async loadDevices() {
+            if (this.loadingDevices) return;
+            
+            this.loadingDevices = true;
+            try {
+                console.log('开始加载设备列表...');
+                const devices = await window.api.getDevices();
+                console.log('获取到设备列表:', devices);
+                
+                if (!Array.isArray(devices)) {
+                    console.error('设备列表格式错误:', devices);
+                    this.showNotification('设备列表格式错误', 'error');
+                    return;
+                }
+
+                // 清空当前设备列表
+                this.devices = [];
+                this.connectedDevices.clear();
+                
+                // 处理设备列表
+                this.devices = devices.map(device => ({
+                    ...device,
+                    isEditing: false,
+                    editingName: '',
+                    name: device.display_name || device.ip_port
+                }));
+                
+                // 更新已连接设备集合
+                devices.forEach(device => {
+                    if (device.status === 'online') {
+                        this.connectedDevices.add(device.ip_port);
+                    }
+                });
+                
+                console.log('处理后的设备列表:', this.devices);
+            } catch (error) {
+                console.error('加载设备失败:', error);
+                this.showNotification('加载设备失败: ' + error.message, 'error');
+            } finally {
+                setTimeout(() => {
+                    this.loadingDevices = false;
+                }, 500);
+            }
+        },
+
+        refreshDevices() {
+            if (!this.isEditing) {
+                this.loadDevices();
+            }
+        },
+
+        isDeviceSelected(deviceId) {
+            return this.selectedDevices.includes(deviceId);
+        },
+
+        toggleDeviceSelection(device) {
+            const index = this.selectedDevices.indexOf(device.ip_port);
+            if (index === -1) {
+                this.selectedDevices.push(device.ip_port);
+            } else {
+                this.selectedDevices.splice(index, 1);
+            }
+        },
+
+        async startEditingName(device) {
+            device.isEditing = true;
+            device.editingName = device.name || device.ip_port;
+            this.$nextTick(() => {
+                const input = this.$refs.nameInput;
+                if (input && input.length > 0) {
+                    input[0].focus();
+                    input[0].select();
+                }
+            });
+        },
+
+        async saveDeviceName(device) {
+            if (!device.isEditing) return;
+            
+            try {
+                const newName = device.editingName.trim();
+                if (newName && newName !== device.name) {
+                    console.log('正在更新设备名称:', {
+                        deviceId: device.ip_port,
+                        oldName: device.name,
+                        newName: newName
+                    });
+                    
+                    const result = await window.api.updateDeviceName(device.ip_port, newName);
+                    console.log('设备名称更新结果:', result);
+                    
+                    if (result && result.success) {
+                        device.name = newName;
+                        this.showNotification('设备名称已更新', 'success');
+                    } else {
+                        throw new Error(result?.message || '更新失败');
+                    }
+                }
+            } catch (error) {
+                console.error('更新设备名称失败:', error);
+                this.showNotification(`更新设备名称失败: ${error.message}`, 'error');
+            } finally {
+                device.isEditing = false;
+                device.editingName = '';
+            }
+        },
+
+        cancelEditingName(device) {
+            device.isEditing = false;
+            device.editingName = '';
+        },
+
         validateIPAddress(ip) {
             const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
             if (!ipRegex.test(ip)) {
@@ -98,139 +219,104 @@ const app = createApp({
             return true;
         },
 
-        async loadDevices() {
-            if (this.loadingDevices) return;
-            
-            this.loadingDevices = true;
+        async connectDevice(deviceId) {
             try {
-                console.log('开始加载设备列表...');
-                const devices = await window.api.getDevices();
-                console.log('获取到设备列表:', devices);
+                this.connectForm.isConnecting = true;
+                let ip, port;
                 
-                if (!Array.isArray(devices)) {
-                    console.error('设备列表格式错误:', devices);
-                    this.showNotification('设备列表格式错误', 'error');
+                if (deviceId) {
+                    // 如果传入了设备ID（ip_port格式），则解析它
+                    const parts = deviceId.split(':');
+                    ip = parts[0];
+                    port = parts[1] || '5555';
+                } else {
+                    // 否则使用表单中的值
+                    ip = this.connectForm.ip;
+                    port = this.connectForm.port || '5555';
+                }
+
+                if (!ip || !this.validateIPAddress(ip)) {
+                    this.showNotification('请输入有效的IP地址', 'error');
                     return;
                 }
 
-                const storedDevices = JSON.parse(localStorage.getItem('knownDevices') || '[]');
-                const knownDevices = new Set(storedDevices);
-
-                devices.forEach(device => {
-                    this.connectedDevices.add(device.id);
-                    knownDevices.add(device.id);
-                });
-
-                localStorage.setItem('knownDevices', JSON.stringify([...knownDevices]));
-
-                const updatedDevices = [...knownDevices].map(deviceId => {
-                    const onlineDevice = devices.find(d => d.id === deviceId);
-                    const existingDevice = this.devices.find(d => d.id === deviceId);
-                    
-                    if (onlineDevice) {
-                        return {
-                            ...onlineDevice,
-                            isEditing: existingDevice ? existingDevice.isEditing : false,
-                            editingName: existingDevice ? existingDevice.editingName : onlineDevice.customName || '',
-                            customName: existingDevice ? existingDevice.customName : onlineDevice.customName || '',
-                            status: 'online',
-                            _animated: true,
-                            brand: onlineDevice.brand || existingDevice?.brand || '',
-                            model: onlineDevice.model || existingDevice?.model || '',
-                            android: onlineDevice.android || existingDevice?.android || ''
-                        };
-                    } else {
-                        return {
-                            id: deviceId,
-                            customName: existingDevice ? existingDevice.customName : deviceId,
-                            isEditing: existingDevice ? existingDevice.isEditing : false,
-                            editingName: existingDevice ? existingDevice.editingName : '',
-                            status: 'offline',
-                            _animated: true,
-                            brand: existingDevice?.brand || '',
-                            model: existingDevice?.model || '',
-                            android: existingDevice?.android || ''
-                        };
-                    }
-                });
-                
-                console.log('处理后的设备列表:', updatedDevices);
-                this.devices = updatedDevices;
-            } catch (error) {
-                console.error('加载设备失败:', error);
-                this.showNotification('加载设备失败: ' + error.message, 'error');
-            } finally {
-                setTimeout(() => {
-                    this.loadingDevices = false;
-                }, 500);
-            }
-        },
-
-        refreshDevices() {
-            if (!this.isEditing) {
-                this.loadDevices();
-            }
-        },
-
-        isDeviceSelected(deviceId) {
-            return this.selectedDevices.includes(deviceId);
-        },
-
-        toggleDeviceSelection(device) {
-            const index = this.selectedDevices.indexOf(device.id);
-            if (index === -1) {
-                this.selectedDevices.push(device.id);
-            } else {
-                this.selectedDevices.splice(index, 1);
-            }
-        },
-
-        async startEditingName(device) {
-            device.isEditing = true;
-            device.editingName = device.name || device.id;
-            this.$nextTick(() => {
-                const input = this.$refs.nameInput;
-                if (input && input.length > 0) {
-                    input[0].focus();
-                    input[0].select();
+                if (!this.validatePort(port)) {
+                    this.showNotification('请输入有效的端口号', 'error');
+                    return;
                 }
-            });
+
+                console.log('正在连接设备:', { ip, port });
+                await window.api.connectDevice(ip, port);
+                this.showNotification('设备连接成功', 'success');
+                this.connectForm.ip = '';
+                this.connectForm.port = '';
+
+                // 智能刷新：连接设备后刷新列表
+                if (this.deviceListSettings.refreshMode === 'smart' && 
+                    this.deviceListSettings.smartRefreshEvents.includes('connect')) {
+                    await this.refreshDevices();
+                }
+            } catch (error) {
+                console.error('连接设备失败:', error);
+                this.showNotification('连接设备失败: ' + error.message, 'error');
+            } finally {
+                this.connectForm.isConnecting = false;
+            }
         },
 
-        async saveDeviceName(device) {
-            if (!device.isEditing) return;
-            
+        async disconnectDevice(deviceId) {
             try {
-                const newName = device.editingName.trim();
-                if (newName && newName !== device.name) {
-                    console.log('正在更新设备名称:', {
-                        deviceId: device.id,
-                        oldName: device.name,
-                        newName: newName
-                    });
-                    
-                    const result = await window.api.updateDeviceName(device.id, newName);
-                    console.log('设备名称更新结果:', result);
-                    
-                    if (result && result.success) {
-                        device.name = newName;
-                        this.showNotification('设备名称已更新', 'success');
-                    } else {
-                        throw new Error(result?.message || '更新失败');
-                    }
+                await window.api.disconnectDevice(deviceId);
+                this.showNotification('设备已断开连接', 'success');
+
+                // 智能刷新：断开设备后刷新列表
+                if (this.deviceListSettings.refreshMode === 'smart' && 
+                    this.deviceListSettings.smartRefreshEvents.includes('disconnect')) {
+                    await this.refreshDevices();
                 }
             } catch (error) {
-                console.error('更新设备名称失败:', error);
-                this.showNotification(`更新设备名称失败: ${error.message}`, 'error');
-            } finally {
-                device.isEditing = false;
-                device.editingName = '';
+                console.error('断开设备失败:', error);
+                this.showNotification('断开设备失败: ' + error.message, 'error');
             }
         },
 
-        cancelEditingName(device) {
-            device.isEditing = false;
-            device.editingName = '';
+        async startScrcpy(deviceId) {
+            try {
+                console.log('开始启动投屏，设备ID:', deviceId);
+                await window.api.startScrcpy(deviceId);
+                this.showNotification('投屏已启动', 'success');
+            } catch (error) {
+                console.error('启动投屏失败:', error);
+                this.showNotification('启动投屏失败: ' + error.message, 'error');
+            }
+        },
+
+        showNotification(message, type = 'info') {
+            const id = this.notificationId++;
+            const existingNotification = this.notifications.find(n => n.message === message);
+            if (existingNotification) {
+                existingNotification.id = id;
+                return;
+            }
+
+            const notification = {
+                id,
+                message,
+                type
+            };
+            this.notifications.push(notification);
+
+            // 3秒后自动关闭通知
+            setTimeout(() => {
+                this.closeNotification(id);
+            }, 3000);
+        },
+
+        closeNotification(id) {
+            const index = this.notifications.findIndex(n => n.id === id);
+            if (index !== -1) {
+                this.notifications.splice(index, 1);
+            }
         },
 
         async loadSettings() {
@@ -299,10 +385,24 @@ const app = createApp({
                 console.log('scrcpy设置:', scrcpySettingsToSave);
                 console.log('设备列表设置:', deviceListSettingsToSave);
 
-                await Promise.all([
-                    window.api.saveScrcpySettings(scrcpySettingsToSave),
-                    window.api.updateDeviceListSettings(deviceListSettingsToSave)
-                ]);
+                // 分别保存设置，这样一个失败不会影响另一个
+                try {
+                    await window.api.saveScrcpySettings(scrcpySettingsToSave);
+                    console.log('scrcpy设置保存成功');
+                } catch (error) {
+                    console.error('保存scrcpy设置失败:', error);
+                    this.showNotification('保存scrcpy设置失败: ' + error.message, 'error');
+                    throw error;
+                }
+
+                try {
+                    await window.api.updateDeviceListSettings(deviceListSettingsToSave);
+                    console.log('设备列表设置保存成功');
+                } catch (error) {
+                    console.error('保存设备列表设置失败:', error);
+                    this.showNotification('保存设备列表设置失败: ' + error.message, 'error');
+                    throw error;
+                }
 
                 this.showNotification('设置已保存', 'success');
                 this.showSettings = false;
@@ -311,13 +411,14 @@ const app = createApp({
                 await this.setupDeviceListRefresh();
             } catch (error) {
                 console.error('保存设置失败:', error);
-                this.showNotification('保存设置失败: ' + error.message, 'error');
+                // 不关闭设置窗口，让用户可以重试
             }
         },
 
         async resetSettings() {
             try {
-                this.scrcpySettings = {
+                // 创建纯对象的默认设置
+                const defaultScrcpySettings = {
                     maxBitrate: 2000000,
                     maxFps: 30,
                     screenWidth: 800,
@@ -338,234 +439,37 @@ const app = createApp({
                     shortcutKeysEnabled: true
                 };
 
-                this.deviceListSettings = {
+                const defaultDeviceListSettings = {
                     refreshMode: 'smart',
                     refreshInterval: 5000,
                     smartRefreshEvents: ['connect', 'disconnect', 'pair']
                 };
 
-                await Promise.all([
-                    window.api.saveScrcpySettings(this.scrcpySettings),
-                    window.api.updateDeviceListSettings(this.deviceListSettings)
-                ]);
+                // 先更新本地状态
+                this.scrcpySettings = { ...defaultScrcpySettings };
+                this.deviceListSettings = { ...defaultDeviceListSettings };
+
+                // 分开保存设置，这样一个失败不会影响另一个
+                try {
+                    await window.api.saveScrcpySettings(defaultScrcpySettings);
+                    console.log('scrcpy设置重置成功');
+                } catch (error) {
+                    console.error('重置scrcpy设置失败:', error);
+                    throw error;
+                }
+
+                try {
+                    await window.api.updateDeviceListSettings(defaultDeviceListSettings);
+                    console.log('设备列表设置重置成功');
+                } catch (error) {
+                    console.error('重置设备列表设置失败:', error);
+                    throw error;
+                }
 
                 this.showNotification('设置已重置为默认值', 'success');
             } catch (error) {
                 console.error('重置设置失败:', error);
                 this.showNotification('重置设置失败: ' + error.message, 'error');
-            }
-        },
-
-        async pairDevice() {
-            if (!this.validateIPAddress(this.pairForm.ip) || 
-                !this.validatePort(this.pairForm.port)) {
-                return;
-            }
-
-            if (!this.pairForm.code) {
-                this.showNotification('请输入配对码', 'error');
-                return;
-            }
-
-            this.pairForm.isPairing = true;
-            try {
-                const port = this.pairForm.port || '5555';
-                await window.api.pairDevice(this.pairForm.ip, port, this.pairForm.code);
-                this.showNotification('设备配对成功', 'success');
-                this.pairForm.ip = '';
-                this.pairForm.port = '';
-                this.pairForm.code = '';
-                await this.loadDevices();
-            } catch (error) {
-                this.showNotification('设备配对失败: ' + error.message, 'error');
-            } finally {
-                this.pairForm.isPairing = false;
-            }
-        },
-
-        async connectDevice(deviceId) {
-            try {
-                this.connectForm.isConnecting = true;
-                const ip = deviceId || this.connectForm.ip;
-                const port = this.connectForm.port || '5555';
-
-                if (!deviceId && !this.validateIPAddress(ip)) {
-                    return;
-                }
-
-                if (!this.validatePort(port)) {
-                    return;
-                }
-
-                await window.api.connectDevice(ip, port);
-                this.showNotification('设备连接成功', 'success');
-                this.connectForm.ip = '';
-                this.connectForm.port = '';
-
-                // 智能刷新：连接设备后刷新列表
-                if (this.deviceListSettings.refreshMode === 'smart' && 
-                    this.deviceListSettings.smartRefreshEvents.includes('connect')) {
-                    await this.refreshDevices();
-                }
-            } catch (error) {
-                console.error('连接设备失败:', error);
-                this.showNotification('连接设备失败: ' + error.message, 'error');
-            } finally {
-                this.connectForm.isConnecting = false;
-            }
-        },
-
-        async disconnectDevice(deviceId) {
-            try {
-                await window.api.disconnectDevice(deviceId);
-                this.showNotification('设备已断开连接', 'success');
-
-                // 智能刷新：断开设备后刷新列表
-                if (this.deviceListSettings.refreshMode === 'smart' && 
-                    this.deviceListSettings.smartRefreshEvents.includes('disconnect')) {
-                    await this.refreshDevices();
-                }
-            } catch (error) {
-                console.error('断开设备失败:', error);
-                this.showNotification('断开设备失败: ' + error.message, 'error');
-            }
-        },
-
-        async startScrcpy(deviceId) {
-            try {
-                console.log('开始启动投屏，设备ID:', deviceId);
-                await window.api.startScrcpy(deviceId);
-                this.showNotification('投屏已启动', 'success');
-            } catch (error) {
-                console.error('启动投屏失败:', error);
-                this.showNotification('启动投屏失败: ' + error.message, 'error');
-            }
-        },
-
-        async stopScrcpy(deviceId) {
-            try {
-                console.log('停止投屏，设备ID:', deviceId);
-                await window.api.stopScrcpy(deviceId);
-                this.showNotification('投屏已停止', 'success');
-            } catch (error) {
-                console.error('停止投屏失败:', error);
-                this.showNotification('停止投屏失败: ' + error.message, 'error');
-            }
-        },
-
-        async executeCommand(deviceId) {
-            if (!this.currentCommand) {
-                alert('请输入要执行的命令');
-                return;
-            }
-            try {
-                const result = await window.api.executeCommand(deviceId, this.currentCommand);
-                console.log('命令执行结果:', result);
-                alert('命令执行成功');
-            } catch (error) {
-                console.error('执行命令失败:', error);
-                alert('执行命令失败: ' + error.message);
-            }
-        },
-
-        async executeCurrentCommand() {
-            if (!this.currentCommand) {
-                alert('请输入要执行的命令');
-                return;
-            }
-            if (this.selectedDevices.length === 0) {
-                alert('请选择要执行命令的设备');
-                return;
-            }
-            try {
-                for (const deviceId of this.selectedDevices) {
-                    await this.executeCommand(deviceId);
-                }
-            } catch (error) {
-                console.error('执行命令失败:', error);
-                alert('执行命令失败: ' + error.message);
-            }
-        },
-
-        async executeGroupCommand() {
-            const command = prompt('请输入要执行的群控命令');
-            if (!command) return;
-            
-            this.currentCommand = command;
-            await this.executeCurrentCommand();
-        },
-
-        handleScriptUpload(event) {
-            this.scriptFile = event.target.files[0];
-        },
-
-        async uploadScript() {
-            if (!this.scriptFile) {
-                alert('请选择要上传的脚本文件');
-                return;
-            }
-            try {
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const content = e.target.result;
-                    await window.api.uploadScript(this.scriptFile.name, content);
-                    this.loadScripts();
-                    alert('脚本上传成功');
-                };
-                reader.readAsText(this.scriptFile);
-            } catch (error) {
-                console.error('上传脚本失败:', error);
-                alert('上传脚本失败: ' + error.message);
-            }
-        },
-
-        async loadScripts() {
-            try {
-                this.scripts = await window.api.getScripts();
-            } catch (error) {
-                console.error('加载脚本失败:', error);
-            }
-        },
-
-        async executeScript(scriptName) {
-            if (this.selectedDevices.length === 0) {
-                alert('请选择要执行脚本的设备');
-                return;
-            }
-            try {
-                const result = await window.api.executeScript(
-                    scriptName,
-                    this.selectedDevices,
-                    { delay: 1000 }
-                );
-                console.log('脚本执行结果:', result);
-                alert('脚本执行成功');
-            } catch (error) {
-                console.error('执行脚本失败:', error);
-                alert('执行脚本失败: ' + error.message);
-            }
-        },
-
-        showNotification(message, type = 'info') {
-            const id = this.notificationId++;
-            const existingNotification = this.notifications.find(n => n.message === message);
-            if (existingNotification) {
-                existingNotification.id = id;
-                return;
-            }
-
-            const notification = {
-                id,
-                message,
-                type
-            };
-            this.notifications.push(notification);
-        },
-
-        closeNotification(id) {
-            const index = this.notifications.findIndex(n => n.id === id);
-            if (index !== -1) {
-                this.notifications.splice(index, 1);
             }
         },
 
@@ -590,34 +494,33 @@ const app = createApp({
                     }, Math.max(this.deviceListSettings.refreshInterval * 2, 10000));
                     break;
             }
-        }
-    },
-    async mounted() {
-        await this.loadSettings();
-        await this.loadDevices();
-        await this.loadScripts();
+        },
 
-        // 设置设备列表刷新
-        this.setupDeviceListRefresh();
-
-        // 监听设备列表刷新模式变化
-        this.$watch('deviceListSettings.refreshMode', () => {
-            this.setupDeviceListRefresh();
-        });
-
-        // 监听刷新间隔变化
-        this.$watch('deviceListSettings.refreshInterval', () => {
-            if (this.deviceListSettings.refreshMode !== 'manual') {
-                this.setupDeviceListRefresh();
-            }
-        });
-    },
-    beforeUnmount() {
-        if (this.refreshInterval) {
-            clearInterval(this.refreshInterval);
+        onBitrateInput(event) {
+            // 将 Mbps 转换为 Kbps
+            this.scrcpySettings.videoBitrateKbps = Math.round(event.target.value * 1000);
         }
     }
 });
 
 // 挂载Vue应用
-app.mount('#app'); 
+app.mount('#app');
+
+// 添加标题栏按钮事件处理
+document.addEventListener('DOMContentLoaded', () => {
+    const closeButton = document.querySelector('.titlebar-button.close');
+    const minimizeButton = document.querySelector('.titlebar-button.minimize');
+    const maximizeButton = document.querySelector('.titlebar-button.maximize');
+
+    closeButton.addEventListener('click', () => {
+        window.api.closeWindow();
+    });
+
+    minimizeButton.addEventListener('click', () => {
+        window.api.minimizeWindow();
+    });
+
+    maximizeButton.addEventListener('click', () => {
+        window.api.maximizeWindow();
+    });
+}); 
