@@ -28,12 +28,6 @@
 <body>
     <div class="titlebar"></div>
     <div id="app">
-        <!-- 加载状态提示 -->
-        <div class="loading-overlay" v-if="loadingDevices">
-            <div class="loading-spinner"></div>
-            <span class="loading-text">加载设备中...</span>
-        </div>
-
         <!-- 侧边栏 -->
         <div class="sidebar">
             <div class="logo">
@@ -45,7 +39,7 @@
                 <div class="sidebar-menu">
                     <button @click="refreshDevices" class="menu-item" :disabled="loadingDevices">
                         <span class="mdi mdi-refresh" :class="{ 'mdi-spin': loadingDevices }"></span> 
-                        {{ loadingDevices ? '刷新中...' : '刷新设备' }}
+                        刷新设备
                     </button>
                     <button @click="executeGroupCommand" class="menu-item" :disabled="!selectedDevices.length">
                         <span class="mdi mdi-console-line"></span> 群控命令
@@ -157,9 +151,9 @@
             </div>
 
             <!-- 加载提示浮窗 -->
-            <div v-if="loadingDevices" class="loading-indicator">
+            <div v-if="loadingDevices" class="loading-overlay">
                 <span class="mdi mdi-refresh mdi-spin"></span>
-                <span class="loading-text">正在加载设备列表...</span>
+                <span class="loading-text">加载设备中...</span>
             </div>
 
             <!-- 控制面板 -->

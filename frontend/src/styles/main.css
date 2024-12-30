@@ -694,50 +694,48 @@ body {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: rgba(30, 30, 30, 0.9);
-    border-radius: 12px;
-    padding: 15px 20px;
+    background: rgba(28, 28, 30, 0.85);
+    border-radius: 8px;
+    padding: 10px 16px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     z-index: 1000;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     animation: slideInFromBottom 0.3s ease;
+    color: #fff;
+    font-size: 13px;
+    min-width: 140px;
 }
 
-.loading-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-top-color: #4CAF50;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
+.loading-overlay .mdi-refresh {
+    color: #4CAF50;
+    font-size: 16px;
 }
 
 .loading-text {
     color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
     font-weight: 500;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+    white-space: nowrap;
 }
 
 @keyframes slideInFromBottom {
     from {
-        transform: translateY(100%);
+        transform: translateY(20px);
         opacity: 0;
     }
     to {
         transform: translateY(0);
         opacity: 1;
     }
+}
+
+/* 移除不需要的样式 */
+.loading-spinner {
+    display: none;
 }
 
 /* 按钮和输入框样式 */
