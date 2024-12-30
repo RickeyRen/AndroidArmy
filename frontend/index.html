@@ -84,35 +84,15 @@
             <div class="device-list">
                 <!-- 设备网格 -->
                 <div class="device-grid">
-                    <div v-for="device in devices" :key="device.ip_port" class="device-card">
-                        <!-- 设备卡片内容 -->
+                    <div v-for="device in devices" :key="device.ip_port" class="device-card" :class="{ 'offline': device.status !== 'online' }">
                         <div class="device-header">
-                            <div class="device-icon">
-                                <img src="https://img.icons8.com/fluency/96/android.png" alt="android" class="device-icon-img">
-                                <div class="icon-glow"></div>
+                            <div class="device-name">
+                                <span class="device-status" :class="device.status"></span>
+                                <h3>{{ device.display_name }}</h3>
                             </div>
-                            <div class="device-title">
-                                <div class="device-name-container">
-                                    <div v-if="!device.isEditing" class="device-name" @click="startEditingName(device)">
-                                        {{ device.name || device.ip_port }}
-                                    </div>
-                                    <input
-                                        v-else
-                                        ref="nameInput"
-                                        type="text"
-                                        v-model="device.editingName"
-                                        @blur="saveDeviceName(device)"
-                                        @keyup.enter="saveDeviceName(device)"
-                                        @keyup.esc="cancelEditingName(device)"
-                                        class="name-input"
-                                        :placeholder="device.ip_port"
-                                    >
-                                </div>
-                                <div class="device-status">
-                                    <span class="status-indicator" :class="device.status"></span>
-                                    {{ device.status === 'online' ? '在线' : device.status === 'unauthorized' ? '未授权' : '离线' }}
-                                </div>
-                            </div>
+                            <button @click="showDeviceDetails(device)" class="action-button info">
+                                <span class="material-icons">info</span>
+                            </button>
                         </div>
                         <div class="device-info">
                             <div class="info-item">
@@ -137,12 +117,6 @@
                                 <button @click="disconnectDevice(device.ip_port)" class="action-button danger">
                                     <span class="material-icons">link_off</span>
                                     断开连接
-                                </button>
-                            </template>
-                            <template v-else>
-                                <button class="action-button connect full-width" @click="connectDevice(device.ip_port)">
-                                    <i class="material-icons">link</i>
-                                    连接设备
                                 </button>
                             </template>
                         </div>
@@ -331,6 +305,78 @@
                     </button>
                     <button @click="closeSettings" class="secondary">
                         <span class="mdi mdi-close"></span>
+                        取消
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设备详细信息弹窗 -->
+        <div class="modal" v-if="showDeviceModal">
+            <div class="modal-content device-details-modal">
+                <div class="modal-header">
+                    <h2>设备详细信息</h2>
+                    <button @click="closeDeviceModal" class="close-btn">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="device-details-section">
+                        <h3>基本信息</h3>
+                        <div class="details-grid">
+                            <div class="detail-item">
+                                <label>设备名称</label>
+                                <span>{{ selectedDevice?.brand }} {{ selectedDevice?.model }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <label>Android 版本</label>
+                                <span>{{ selectedDevice?.android_version }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <label>分辨率</label>
+                                <span>{{ selectedDevice?.resolution }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <label>屏幕密度</label>
+                                <span>{{ selectedDevice?.density }} dpi</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="device-details-section">
+                        <h3>设备特定设置</h3>
+                        <div class="device-settings">
+                            <div class="setting-item">
+                                <label>视频编码器</label>
+                                <select v-model="selectedDevice.encoder_name">
+                                    <option value="">默认</option>
+                                    <option v-for="encoder in selectedDevice.supported_encoders" 
+                                            :key="encoder" 
+                                            :value="encoder">
+                                        {{ getEncoderDisplayName(encoder) }}
+                                    </option>
+                                </select>
+                            </div>
+                            <!-- 其他设备特定设置可以在这里添加 -->
+                        </div>
+                    </div>
+                    
+                    <div class="device-details-section">
+                        <h3>支持的编码器</h3>
+                        <div class="encoders-list">
+                            <div v-for="encoder in selectedDevice.supported_encoders" 
+                                 :key="encoder" 
+                                 class="encoder-item">
+                                {{ getEncoderDisplayName(encoder) }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button @click="saveDeviceSettings" class="action-button primary">
+                        保存设置
+                    </button>
+                    <button @click="closeDeviceModal" class="action-button">
                         取消
                     </button>
                 </div>

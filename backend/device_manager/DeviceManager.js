@@ -77,6 +77,39 @@ class DeviceManager extends EventEmitter {
                             const { stdout: brand } = await execAsync(`adb -s ${ipPort} shell getprop ro.product.brand`);
                             const { stdout: version } = await execAsync(`adb -s ${ipPort} shell getprop ro.build.version.release`);
                             
+                            // 获取更多设备信息
+                            const { stdout: resolution } = await execAsync(`adb -s ${ipPort} shell wm size`);
+                            const { stdout: density } = await execAsync(`adb -s ${ipPort} shell wm density`);
+                            
+                            // 解析分辨率
+                            const resMatch = resolution.match(/Physical size: (\d+x\d+)/);
+                            const densityMatch = density.match(/Physical density: (\d+)/);
+                            
+                            // 尝试获取编码器信息
+                            let encoderList = [];
+                            try {
+                                const { stdout: encoders } = await execAsync(`adb -s ${ipPort} shell "dumpsys media.codec | grep -A 1 'encoder: video'"`);
+                                encoderList = encoders.split('\n')
+                                    .filter(line => line.includes('encoder:'))
+                                    .map(line => {
+                                        const match = line.match(/name=([^,]+)/);
+                                        return match ? match[1].trim() : null;
+                                    })
+                                    .filter(Boolean);
+                            } catch (error) {
+                                console.log(`获取设备 ${ipPort} 编码器信息失败，将使用默认编码器列表`);
+                                encoderList = [
+                                    'h264',
+                                    'h265',
+                                    'OMX.qcom.video.encoder.avc',
+                                    'OMX.qcom.video.encoder.hevc',
+                                    'OMX.MTK.VIDEO.ENCODER.AVC',
+                                    'OMX.MTK.VIDEO.ENCODER.HEVC',
+                                    'c2.android.avc.encoder',
+                                    'c2.android.hevc.encoder'
+                                ];
+                            }
+                            
                             // 从数据库加载设备信息
                             let savedDevice = await this.loadDeviceInfo(ipPort);
                             const displayName = savedDevice ? savedDevice.display_name : ipPort;
@@ -87,7 +120,12 @@ class DeviceManager extends EventEmitter {
                                 brand: brand.trim() || 'Unknown Brand',
                                 android_version: version.trim() || 'Unknown Version',
                                 display_name: displayName,
-                                status: 'online'
+                                status: 'online',
+                                resolution: resMatch ? resMatch[1] : 'Unknown',
+                                density: densityMatch ? densityMatch[1] : 'Unknown',
+                                supported_encoders: encoderList,
+                                encoder_name: savedDevice?.encoder_name || '',
+                                device_settings: savedDevice?.device_settings || {}
                             };
                             
                             currentDevices.push(deviceInfo);

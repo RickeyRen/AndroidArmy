@@ -27,3 +27,4 @@ Thumbs.db
 /database/*.db-wal
 /database/*.db-shm
 database/devices.db
+database/devices.db

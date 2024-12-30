@@ -255,9 +255,7 @@ class SettingsManager {
             await this.query(`
                 CREATE TABLE IF NOT EXISTS settings (
                     id TEXT PRIMARY KEY,
-                    value TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    value TEXT NOT NULL
                 )
             `);
             log('成功创建 settings 表');
@@ -267,11 +265,9 @@ class SettingsManager {
                 CREATE TABLE IF NOT EXISTS devices (
                     ip_port TEXT PRIMARY KEY,
                     display_name TEXT,
-                    brand TEXT,
-                    model TEXT,
-                    android_version TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    encoder_name TEXT,
+                    device_settings TEXT,
+                    last_connected DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             `);
             log('成功创建 devices 表');
@@ -511,6 +507,35 @@ class SettingsManager {
             return displayName;
         } catch (error) {
             logError('更新设备显示名称失败:', error);
+            throw error;
+        }
+    }
+
+    async getDeviceSettings(ipPort) {
+        try {
+            const row = await this.queryOne(
+                'SELECT device_settings, encoder_name FROM devices WHERE ip_port = ?',
+                [ipPort]
+            );
+            return {
+                settings: row?.device_settings ? JSON.parse(row.device_settings) : {},
+                encoder_name: row?.encoder_name || ''
+            };
+        } catch (error) {
+            logError('获取设备设置失败:', error);
+            return { settings: {}, encoder_name: '' };
+        }
+    }
+
+    async updateDeviceSettings(ipPort, settings, encoderName) {
+        try {
+            await this.query(
+                'INSERT OR REPLACE INTO devices (ip_port, device_settings, encoder_name) VALUES (?, ?, ?)',
+                [ipPort, JSON.stringify(settings), encoderName]
+            );
+            return true;
+        } catch (error) {
+            logError('更新设备设置失败:', error);
             throw error;
         }
     }

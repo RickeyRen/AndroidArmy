@@ -48,6 +48,18 @@ const app = createApp({
                 refreshMode: 'smart',
                 refreshInterval: 5000,
                 smartRefreshEvents: ['connect', 'disconnect', 'pair']
+            },
+            showDeviceModal: false,
+            selectedDevice: null,
+            encoderDisplayNames: {
+                'h264': 'H.264',
+                'h265': 'H.265 (HEVC)',
+                'OMX.qcom.video.encoder.avc': '高通 H.264',
+                'OMX.qcom.video.encoder.hevc': '高通 H.265',
+                'OMX.MTK.VIDEO.ENCODER.AVC': '联发科 H.264',
+                'OMX.MTK.VIDEO.ENCODER.HEVC': '联发科 H.265',
+                'c2.android.avc.encoder': 'Android H.264',
+                'c2.android.hevc.encoder': 'Android H.265'
             }
         };
     },
@@ -282,12 +294,23 @@ const app = createApp({
 
         async startScrcpy(deviceId) {
             try {
-                console.log('开始启动投屏，设备ID:', deviceId);
-                await window.api.startScrcpy(deviceId);
-                this.showNotification('投屏已启动', 'success');
+                // 获取设备特定的编码器设置
+                const device = this.devices.find(d => d.ip_port === deviceId);
+                if (device && device.encoder_name) {
+                    // 临时覆盖全局编码器设置
+                    const originalEncoder = this.scrcpySettings.encoderName;
+                    this.scrcpySettings.encoderName = device.encoder_name;
+                    
+                    await window.api.startScrcpy(deviceId);
+                    
+                    // 恢复全局设置
+                    this.scrcpySettings.encoderName = originalEncoder;
+                } else {
+                    await window.api.startScrcpy(deviceId);
+                }
             } catch (error) {
-                console.error('启动投屏失败:', error);
-                this.showNotification('启动投屏失败: ' + error.message, 'error');
+                console.error('启动scrcpy失败:', error);
+                this.showNotification('启动scrcpy失败: ' + error.message, 'error');
             }
         },
 
@@ -499,6 +522,48 @@ const app = createApp({
         onBitrateInput(event) {
             // 将 Mbps 转换为 Kbps
             this.scrcpySettings.videoBitrateKbps = Math.round(event.target.value * 1000);
+        },
+
+        showDeviceDetails(device) {
+            this.selectedDevice = { ...device };
+            this.showDeviceModal = true;
+        },
+
+        closeDeviceModal() {
+            this.showDeviceModal = false;
+            this.selectedDevice = null;
+        },
+
+        getEncoderDisplayName(encoderName) {
+            return this.encoderDisplayNames[encoderName] || encoderName;
+        },
+
+        async saveDeviceSettings() {
+            try {
+                if (!this.selectedDevice) return;
+
+                const deviceSettings = {
+                    encoder_name: this.selectedDevice.encoder_name,
+                    // 可以在这里添加更多设备特定设置
+                };
+
+                await window.api.updateDeviceSettings(this.selectedDevice.ip_port, deviceSettings);
+                
+                // 更新本地设备列表中的设置
+                const deviceIndex = this.devices.findIndex(d => d.ip_port === this.selectedDevice.ip_port);
+                if (deviceIndex !== -1) {
+                    this.devices[deviceIndex] = {
+                        ...this.devices[deviceIndex],
+                        encoder_name: this.selectedDevice.encoder_name
+                    };
+                }
+
+                this.showNotification('设备设置已保存', 'success');
+                this.closeDeviceModal();
+            } catch (error) {
+                console.error('保存设备设置失败:', error);
+                this.showNotification('保存设备设置失败: ' + error.message, 'error');
+            }
         }
     }
 });

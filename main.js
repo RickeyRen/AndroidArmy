@@ -323,7 +323,22 @@ ipcMain.handle('set-device-display-name', async (event, { ipPort, displayName })
 
 // Scrcpy 相关 IPC 处理
 ipcMain.handle('start-scrcpy', async (event, deviceId) => {
-    return await scrcpyManager.startSession(deviceId);
+    try {
+        // 获取设备特定设置
+        const deviceSettings = await settingsManager.getDeviceSettings(deviceId);
+        
+        // 如果设备有特定的编码器设置，使用它
+        if (deviceSettings.encoder_name) {
+            const scrcpySettings = await settingsManager.getScrcpySettings();
+            scrcpySettings.encoderName = deviceSettings.encoder_name;
+            await settingsManager.saveScrcpySettings(scrcpySettings);
+        }
+        
+        return await scrcpyManager.startSession(deviceId);
+    } catch (error) {
+        logError('启动scrcpy失败:', error);
+        throw error;
+    }
 });
 
 ipcMain.handle('stop-scrcpy', async (event, deviceId) => {
@@ -402,5 +417,26 @@ ipcMain.handle('window-maximize', () => {
         } else {
             mainWindow.maximize();
         }
+    }
+});
+
+// 设备设置相关 IPC 处理
+ipcMain.handle('get-device-settings', async (event, deviceId) => {
+    try {
+        await settingsManager.waitForInit();
+        return await settingsManager.getDeviceSettings(deviceId);
+    } catch (error) {
+        logError('获取设备设置失败:', error);
+        throw error;
+    }
+});
+
+ipcMain.handle('update-device-settings', async (event, deviceId, settings) => {
+    try {
+        await settingsManager.waitForInit();
+        return await settingsManager.updateDeviceSettings(deviceId, settings);
+    } catch (error) {
+        logError('更新设备设置失败:', error);
+        throw error;
     }
 }); 

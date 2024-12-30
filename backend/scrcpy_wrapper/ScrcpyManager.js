@@ -122,9 +122,9 @@ class ScrcpyManager extends EventEmitter {
             args.push('--window-height', settings.screenHeight);
         }
         if (settings.lockVideoOrientation !== undefined && settings.lockVideoOrientation !== -1) {
-            args.push('--lock-video-orientation', settings.lockVideoOrientation);
+            args.push('--capture-orientation', settings.lockVideoOrientation);
         }
-        if (settings.encoderName) args.push('--encoder', settings.encoderName);
+        if (settings.encoderName) args.push('--video-encoder', settings.encoderName);
         if (settings.borderless) args.push('--window-borderless');
         if (settings.fullscreen) args.push('--fullscreen');
         if (settings.alwaysOnTop) args.push('--always-on-top');
