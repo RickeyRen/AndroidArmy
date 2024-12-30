@@ -234,6 +234,40 @@
                             </div>
                         </div>
                     </div>
+                    <div class="settings-group">
+                        <h3><span class="mdi mdi-refresh"></span> 设备列表刷新</h3>
+                        <div class="settings-group-content">
+                            <div class="setting-item">
+                                <label>刷新模式</label>
+                                <select v-model="deviceListSettings.refreshMode">
+                                    <option value="manual">手动刷新</option>
+                                    <option value="auto">自动刷新</option>
+                                    <option value="smart">智能刷新</option>
+                                </select>
+                            </div>
+                            <div class="setting-item" v-if="deviceListSettings.refreshMode !== 'manual'">
+                                <label>刷新间隔 (毫秒)</label>
+                                <input type="number" v-model.number="deviceListSettings.refreshInterval" min="1000" step="1000">
+                            </div>
+                            <div class="setting-item" v-if="deviceListSettings.refreshMode === 'smart'">
+                                <label>智能刷新事件</label>
+                                <div class="checkbox-group">
+                                    <label>
+                                        <input type="checkbox" v-model="deviceListSettings.smartRefreshEvents" value="connect">
+                                        连接设备时
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" v-model="deviceListSettings.smartRefreshEvents" value="disconnect">
+                                        断开设备时
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" v-model="deviceListSettings.smartRefreshEvents" value="pair">
+                                        配对设备时
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="settings-actions">
                     <button @click="saveSettings" class="primary">

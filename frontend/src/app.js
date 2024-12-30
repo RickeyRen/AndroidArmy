@@ -46,6 +46,11 @@ const app = createApp({
                 powerOffOnClose: true,
                 clipboardAutosync: true,
                 shortcutKeysEnabled: true
+            },
+            deviceListSettings: {
+                refreshMode: 'smart',
+                refreshInterval: 5000,
+                smartRefreshEvents: ['connect', 'disconnect', 'pair']
             }
         };
     },
@@ -56,7 +61,11 @@ const app = createApp({
             if (settings) {
                 this.scrcpySettings = settings;
             }
-            // 如果没有设置，使用默认值（已经在data中定义）
+            
+            const deviceListSettings = await window.api.getDeviceListSettings();
+            if (deviceListSettings) {
+                this.deviceListSettings = deviceListSettings;
+            }
         } catch (error) {
             console.error('加载设置失败:', error);
         }
@@ -227,13 +236,18 @@ const app = createApp({
         async loadSettings() {
             try {
                 console.log('开始加载设置...');
-                const settings = await window.api.getScrcpySettings();
-                console.log('从主进程获取的设置:', settings);
+                const [scrcpySettings, deviceListSettings] = await Promise.all([
+                    window.api.getScrcpySettings(),
+                    window.api.getDeviceListSettings()
+                ]);
 
-                if (settings) {
-                    this.scrcpySettings = settings;
+                if (scrcpySettings) {
+                    this.scrcpySettings = scrcpySettings;
                 }
-                console.log('最终设置值:', this.scrcpySettings);
+                if (deviceListSettings) {
+                    this.deviceListSettings = deviceListSettings;
+                }
+                console.log('最终设置值:', { scrcpySettings: this.scrcpySettings, deviceListSettings: this.deviceListSettings });
             } catch (error) {
                 console.error('加载设置失败:', error);
                 this.showNotification('加载设置失败: ' + error.message, 'error');
@@ -252,9 +266,10 @@ const app = createApp({
 
         async saveSettings() {
             try {
-                console.log('开始保存设置...');
-                // 创建一个纯对象副本
-                const settingsToSave = {
+                console.log('保存设置...');
+                
+                // 创建纯对象副本，确保可以被序列化
+                const scrcpySettingsToSave = {
                     maxBitrate: this.scrcpySettings.maxBitrate,
                     maxFps: this.scrcpySettings.maxFps,
                     screenWidth: this.scrcpySettings.screenWidth,
@@ -274,14 +289,26 @@ const app = createApp({
                     clipboardAutosync: this.scrcpySettings.clipboardAutosync,
                     shortcutKeysEnabled: this.scrcpySettings.shortcutKeysEnabled
                 };
-                
-                console.log('要保存的设置:', settingsToSave);
-                
-                await window.api.saveScrcpySettings(settingsToSave);
-                console.log('设置保存成功');
-                
-                this.showNotification('设置保存成功', 'success');
-                this.closeSettings();
+
+                const deviceListSettingsToSave = {
+                    refreshMode: this.deviceListSettings.refreshMode,
+                    refreshInterval: this.deviceListSettings.refreshInterval,
+                    smartRefreshEvents: [...this.deviceListSettings.smartRefreshEvents]
+                };
+
+                console.log('scrcpy设置:', scrcpySettingsToSave);
+                console.log('设备列表设置:', deviceListSettingsToSave);
+
+                await Promise.all([
+                    window.api.saveScrcpySettings(scrcpySettingsToSave),
+                    window.api.updateDeviceListSettings(deviceListSettingsToSave)
+                ]);
+
+                this.showNotification('设置已保存', 'success');
+                this.showSettings = false;
+
+                // 重新设置设备列表刷新
+                await this.setupDeviceListRefresh();
             } catch (error) {
                 console.error('保存设置失败:', error);
                 this.showNotification('保存设置失败: ' + error.message, 'error');
@@ -290,11 +317,7 @@ const app = createApp({
 
         async resetSettings() {
             try {
-                if (!confirm('确定要重置所有设置到默认值吗？')) {
-                    return;
-                }
-
-                const defaultSettings = {
+                this.scrcpySettings = {
                     maxBitrate: 2000000,
                     maxFps: 30,
                     screenWidth: 800,
@@ -315,12 +338,17 @@ const app = createApp({
                     shortcutKeysEnabled: true
                 };
 
-                // 创建一个纯对象副本
-                const settingsToSave = { ...defaultSettings };
-                await window.api.saveScrcpySettings(settingsToSave);
-                
-                // 更新本地状态
-                this.scrcpySettings = { ...defaultSettings };
+                this.deviceListSettings = {
+                    refreshMode: 'smart',
+                    refreshInterval: 5000,
+                    smartRefreshEvents: ['connect', 'disconnect', 'pair']
+                };
+
+                await Promise.all([
+                    window.api.saveScrcpySettings(this.scrcpySettings),
+                    window.api.updateDeviceListSettings(this.deviceListSettings)
+                ]);
+
                 this.showNotification('设置已重置为默认值', 'success');
             } catch (error) {
                 console.error('重置设置失败:', error);
@@ -356,46 +384,32 @@ const app = createApp({
         },
 
         async connectDevice(deviceId) {
-            // 如果传入了deviceId，说明是重新连接离线设备
-            if (deviceId) {
-                this.connectForm.isConnecting = true;
-                try {
-                    await window.api.connectDevice(deviceId);
-                    this.showNotification('设备连接成功', 'success');
-                    await this.loadDevices();
-                } catch (error) {
-                    this.showNotification('设备连接失败: ' + error.message, 'error');
-                } finally {
-                    this.connectForm.isConnecting = false;
-                }
-                return;
-            }
-
-            // 否则使用表单中的IP和端口
-            if (!this.validateIPAddress(this.connectForm.ip) || 
-                !this.validatePort(this.connectForm.port)) {
-                return;
-            }
-
-            this.connectForm.isConnecting = true;
             try {
+                this.connectForm.isConnecting = true;
+                const ip = deviceId || this.connectForm.ip;
                 const port = this.connectForm.port || '5555';
-                const deviceId = `${this.connectForm.ip}:${port}`;
-                
-                await window.api.connectDevice(deviceId);
-                
-                const storedDevices = JSON.parse(localStorage.getItem('knownDevices') || '[]');
-                if (!storedDevices.includes(deviceId)) {
-                    storedDevices.push(deviceId);
-                    localStorage.setItem('knownDevices', JSON.stringify(storedDevices));
+
+                if (!deviceId && !this.validateIPAddress(ip)) {
+                    return;
                 }
-                
+
+                if (!this.validatePort(port)) {
+                    return;
+                }
+
+                await window.api.connectDevice(ip, port);
                 this.showNotification('设备连接成功', 'success');
                 this.connectForm.ip = '';
                 this.connectForm.port = '';
-                await this.loadDevices();
+
+                // 智能刷新：连接设备后刷新列表
+                if (this.deviceListSettings.refreshMode === 'smart' && 
+                    this.deviceListSettings.smartRefreshEvents.includes('connect')) {
+                    await this.refreshDevices();
+                }
             } catch (error) {
-                this.showNotification('设备连接失败: ' + error.message, 'error');
+                console.error('连接设备失败:', error);
+                this.showNotification('连接设备失败: ' + error.message, 'error');
             } finally {
                 this.connectForm.isConnecting = false;
             }
@@ -404,11 +418,12 @@ const app = createApp({
         async disconnectDevice(deviceId) {
             try {
                 await window.api.disconnectDevice(deviceId);
-                await this.loadDevices();
                 this.showNotification('设备已断开连接', 'success');
-                const index = this.selectedDevices.indexOf(deviceId);
-                if (index !== -1) {
-                    this.selectedDevices.splice(index, 1);
+
+                // 智能刷新：断开设备后刷新列表
+                if (this.deviceListSettings.refreshMode === 'smart' && 
+                    this.deviceListSettings.smartRefreshEvents.includes('disconnect')) {
+                    await this.refreshDevices();
                 }
             } catch (error) {
                 console.error('断开设备失败:', error);
@@ -552,28 +567,50 @@ const app = createApp({
             if (index !== -1) {
                 this.notifications.splice(index, 1);
             }
+        },
+
+        setupDeviceListRefresh() {
+            // 清除现有的刷新定时器
+            if (this.refreshInterval) {
+                clearInterval(this.refreshInterval);
+                this.refreshInterval = null;
+            }
+
+            // 根据刷新模式设置刷新
+            switch (this.deviceListSettings.refreshMode) {
+                case 'auto':
+                    this.refreshInterval = setInterval(() => {
+                        this.refreshDevices();
+                    }, this.deviceListSettings.refreshInterval);
+                    break;
+                case 'smart':
+                    // 智能刷新模式下，仍然保持一个较长的刷新间隔
+                    this.refreshInterval = setInterval(() => {
+                        this.refreshDevices();
+                    }, Math.max(this.deviceListSettings.refreshInterval * 2, 10000));
+                    break;
+            }
         }
     },
     async mounted() {
-        try {
-            console.log('Vue应用开始挂载...');
-            
-            // 确保按顺序执行初始化
-            await this.loadDevices();
-            await this.loadScripts();
-            
-            // 设置自动刷新
-            this.refreshInterval = setInterval(() => {
-                if (!this.isEditing) {
-                    this.loadDevices();
-                }
-            }, 5000);
-            
-            console.log('初始化完成');
-        } catch (error) {
-            console.error('初始化失败:', error);
-            this.showNotification('初始化失败: ' + error.message, 'error');
-        }
+        await this.loadSettings();
+        await this.loadDevices();
+        await this.loadScripts();
+
+        // 设置设备列表刷新
+        this.setupDeviceListRefresh();
+
+        // 监听设备列表刷新模式变化
+        this.$watch('deviceListSettings.refreshMode', () => {
+            this.setupDeviceListRefresh();
+        });
+
+        // 监听刷新间隔变化
+        this.$watch('deviceListSettings.refreshInterval', () => {
+            if (this.deviceListSettings.refreshMode !== 'manual') {
+                this.setupDeviceListRefresh();
+            }
+        });
     },
     beforeUnmount() {
         if (this.refreshInterval) {
