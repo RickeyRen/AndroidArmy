@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小米设备群控系统</title>
+    <link rel="stylesheet" href="src/styles/main.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@6.5.95/css/materialdesignicons.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        .material-icons {
+            font-family: 'Material Icons';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 加载状态提示 -->
+        <div class="loading-overlay" v-if="loadingDevices">
+            <div class="loading-spinner"></div>
+            <span class="loading-text">加载设备中...</span>
+        </div>
+
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="logo">
+                <h1><span class="mdi mdi-cellphone-link"></span> 设备管理</h1>
+            </div>
+            
+            <div class="sidebar-content">
+                <!-- 顶部操作栏 -->
+                <div class="sidebar-menu">
+                    <button @click="refreshDevices" class="menu-item" :disabled="loadingDevices">
+                        <span class="mdi mdi-refresh" :class="{ 'mdi-spin': loadingDevices }"></span> 
+                        {{ loadingDevices ? '刷新中...' : '刷新设备' }}
+                    </button>
+                    <button @click="executeGroupCommand" class="menu-item" :disabled="!selectedDevices.length">
+                        <span class="mdi mdi-console-line"></span> 群控命令
+                    </button>
+                    <button @click="showSettings = true" class="menu-item">
+                        <span class="mdi mdi-cog"></span> 设置
+                    </button>
+                </div>
+
+                <!-- 连接设备表单 -->
+                <div class="form-group">
+                    <h3><span class="mdi mdi-lan-connect"></span> 连接设备</h3>
+                    <div class="form-content">
+                        <input type="text" v-model="connectForm.ip" placeholder="设备IP地址" :disabled="connectForm.isConnecting">
+                        <input type="text" v-model="connectForm.port" placeholder="端口号 (默认5555)" :disabled="connectForm.isConnecting">
+                        <button @click="connectDevice" :disabled="connectForm.isConnecting">
+                            <span class="mdi" :class="connectForm.isConnecting ? 'mdi-loading mdi-spin' : 'mdi-connection'"></span>
+                            {{ connectForm.isConnecting ? '连接中...' : '连接设备' }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 配对设备表单 -->
+                <div class="form-group">
+                    <h3><span class="mdi mdi-key-wireless"></span> 配对设备</h3>
+                    <div class="form-content">
+                        <input type="text" v-model="pairForm.ip" placeholder="设备IP地址" :disabled="pairForm.isPairing">
+                        <input type="text" v-model="pairForm.port" placeholder="端口号 (默认5555)" :disabled="pairForm.isPairing">
+                        <input type="text" v-model="pairForm.code" placeholder="配对码" :disabled="pairForm.isPairing">
+                        <button @click="pairDevice" :disabled="pairForm.isPairing">
+                            <span class="mdi" :class="pairForm.isPairing ? 'mdi-loading mdi-spin' : 'mdi-key-link'"></span>
+                            {{ pairForm.isPairing ? '配对中...' : '配对设备' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-container">
+            <!-- 设备列表 -->
+            <div class="device-list">
+                <!-- 设备网格 -->
+                <div class="device-grid">
+                    <div v-for="device in devices" :key="device.id" class="device-card">
+                        <!-- 设备卡片内容 -->
+                        <div class="device-header">
+                            <div class="device-icon">
+                                <img src="https://img.icons8.com/fluency/96/android.png" alt="android" class="device-icon-img">
+                                <div class="icon-glow"></div>
+                            </div>
+                            <div class="device-title">
+                                <div class="device-name-container">
+                                    <div v-if="!device.isEditing" class="device-name" @click="startEditingName(device)">
+                                        {{ device.name || device.id }}
+                                    </div>
+                                    <input
+                                        v-else
+                                        ref="nameInput"
+                                        type="text"
+                                        v-model="device.editingName"
+                                        @blur="saveDeviceName(device)"
+                                        @keyup.enter="saveDeviceName(device)"
+                                        @keyup.esc="cancelEditingName(device)"
+                                        class="name-input"
+                                        :placeholder="device.id"
+                                    >
+                                </div>
+                                <div class="device-status">
+                                    <span class="status-indicator" :class="device.status"></span>
+                                    {{ device.status === 'online' ? '在线' : device.status === 'unauthorized' ? '未授权' : '离线' }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="device-info">
+                            <div class="info-item">
+                                <i class="mdi mdi-cellphone"></i>
+                                <span>{{ device.brand }} {{ device.model }}</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="mdi mdi-android"></i>
+                                <span>Android {{ device.android }}</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="mdi mdi-ip-network"></i>
+                                <span>{{ device.id }}</span>
+                            </div>
+                        </div>
+                        <div class="device-actions">
+                            <template v-if="device.status === 'online'">
+                                <button @click="startScrcpy(device.id)" class="action-button">
+                                    <span class="material-icons">cast</span>
+                                    启动投屏
+                                </button>
+                                <button @click="disconnectDevice(device.id)" class="action-button danger">
+                                    <span class="material-icons">link_off</span>
+                                    断开连接
+                                </button>
+                            </template>
+                            <template v-else>
+                                <button class="action-button connect full-width" @click="connectDevice(device.id)">
+                                    <i class="material-icons">link</i>
+                                    连接设备
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 加载提示浮窗 -->
+            <div v-if="loadingDevices" class="loading-indicator">
+                <span class="mdi mdi-refresh mdi-spin"></span>
+                <span class="loading-text">正在加载设备列表...</span>
+            </div>
+
+            <!-- 控制面板 -->
+            <div class="control-panel" v-if="selectedDevices.length > 0">
+                <div class="panel-section">
+                    <h2><span class="mdi mdi-console-line"></span> 群控命令</h2>
+                    <div class="command-input">
+                        <input type="text" v-model="currentCommand" placeholder="输入要执行的命令" @keyup.enter="executeCurrentCommand">
+                        <button @click="executeCurrentCommand">
+                            <span class="mdi mdi-send"></span>
+                            执行
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 通知区域 -->
+        <div class="notifications">
+            <div v-for="notification in notifications" :key="notification.id" class="notification" :class="notification.type">
+                <div class="message">{{ notification.message }}</div>
+                <button class="close-btn" @click="closeNotification(notification.id)">
+                    <span class="mdi mdi-close"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 设置对话框 -->
+        <div class="settings-modal" v-if="showSettings">
+            <div class="settings-content">
+                <div class="settings-header">
+                    <h2><span class="mdi mdi-cog"></span> 设置</h2>
+                    <button @click="closeSettings" class="close-btn">
+                        <span class="mdi mdi-close"></span>
+                    </button>
+                </div>
+                <div class="settings-body">
+                    <div class="settings-group">
+                        <h3><span class="mdi mdi-monitor-screenshot"></span> 投屏设置</h3>
+                        <div class="settings-group-content">
+                            <div class="setting-item">
+                                <label>最大比特率 (Kbps)</label>
+                                <input type="number" v-model.number="scrcpySettings.maxBitrate">
+                            </div>
+                            <div class="setting-item">
+                                <label>最大帧率</label>
+                                <input type="number" v-model.number="scrcpySettings.maxFps">
+                            </div>
+                            <div class="setting-item">
+                                <label>窗口宽度</label>
+                                <input type="number" v-model.number="scrcpySettings.screenWidth">
+                            </div>
+                            <div class="setting-item">
+                                <label>窗口高度</label>
+                                <input type="number" v-model.number="scrcpySettings.screenHeight">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-group">
+                        <h3><span class="mdi mdi-tune"></span> 显示选项</h3>
+                        <div class="settings-group-content">
+                            <div class="setting-item">
+                                <label>全屏显示</label>
+                                <input type="checkbox" v-model="scrcpySettings.fullscreen">
+                            </div>
+                            <div class="setting-item">
+                                <label>无边框窗口</label>
+                                <input type="checkbox" v-model="scrcpySettings.borderless">
+                            </div>
+                            <div class="setting-item">
+                                <label>窗口置顶</label>
+                                <input type="checkbox" v-model="scrcpySettings.alwaysOnTop">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-actions">
+                    <button @click="saveSettings" class="primary">
+                        <span class="mdi mdi-content-save"></span>
+                        保存
+                    </button>
+                    <button @click="resetSettings" class="warning">
+                        <span class="mdi mdi-restore"></span>
+                        重置
+                    </button>
+                    <button @click="closeSettings" class="secondary">
+                        <span class="mdi mdi-close"></span>
+                        取消
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="src/app.js"></script>
+</body>
+</html> 
