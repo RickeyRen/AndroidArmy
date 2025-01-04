@@ -1,6 +1,17 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+
+// 设置应用程序编码
+app.commandLine.appendSwitch('lang', 'zh-CN');
+app.commandLine.appendSwitch('force-chinese-ime', 'true');
+
+// 设置进程编码
+if (process.platform === 'win32') {
+    process.env.LANG = 'zh_CN.UTF-8';
+    process.env.ELECTRON_FORCE_CHINESE_IME = 'true';
+}
+
 const DeviceManager = require('./backend/device_manager/DeviceManager');
 const ScrcpyManager = require('./backend/scrcpy_wrapper/ScrcpyManager');
 const ScriptEngine = require('./backend/script_engine/ScriptEngine');
