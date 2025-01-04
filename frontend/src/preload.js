@@ -26,4 +26,14 @@ getDevices: async () => {
         console.error('获取设备列表失败:', error);
         throw error;
     }
-}, 
+},
+
+// 设备配对
+pairDevice: async (ip, port, code) => {
+    try {
+        return await ipcRenderer.invoke('pair-device', ip, port, code);
+    } catch (error) {
+        console.error('配对设备失败:', error);
+        throw error;
+    }
+}; 

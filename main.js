@@ -196,16 +196,24 @@ ipcMain.handle('get-devices', async () => {
     }
 });
 
-ipcMain.handle('pair-device', async (event, { ip, port, code }) => {
-    const result = await deviceManager.pairDevice(ip, port, code);
-    
-    // 智能刷新：配对后刷新
-    const settings = await settingsManager.getDeviceListSettings();
-    if (settings.refreshMode === 'smart' && settings.smartRefreshEvents.includes('pair')) {
-        await refreshDeviceList(true);
+ipcMain.handle('pair-device', async (event, ip, port, code) => {
+    try {
+        const result = await deviceManager.pairDevice(ip, port, code);
+        
+        // 智能刷新：配对后刷新
+        const settings = await settingsManager.getDeviceListSettings();
+        if (settings.refreshMode === 'smart' && settings.smartRefreshEvents.includes('pair')) {
+            await refreshDeviceList(true);
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('设备配对失败:', error);
+        return {
+            success: false,
+            message: error.message
+        };
     }
-    
-    return result;
 });
 
 // 设备连接
