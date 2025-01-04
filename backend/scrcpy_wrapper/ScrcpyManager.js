@@ -124,15 +124,21 @@ class ScrcpyManager extends EventEmitter {
         if (settings.lockVideoOrientation !== undefined && settings.lockVideoOrientation !== -1) {
             args.push('--capture-orientation', settings.lockVideoOrientation);
         }
-        if (settings.encoderName) args.push('--video-encoder', settings.encoderName);
+        if (settings.encoderName && settings.encoderName !== '') {
+            args.push('--video-encoder', settings.encoderName);
+        }
         if (settings.borderless) args.push('--window-borderless');
         if (settings.fullscreen) args.push('--fullscreen');
         if (settings.alwaysOnTop) args.push('--always-on-top');
-        if (settings.stayAwake) args.push('--stay-awake');
-        if (settings.turnScreenOff) args.push('--turn-screen-off');
-        if (settings.showTouches) args.push('--show-touches');
+
+        // 可能需要权限的设置，只在明确启用时添加
+        if (settings.stayAwake === true) args.push('--stay-awake');
+        if (settings.turnScreenOff === true) args.push('--turn-screen-off');
+        if (settings.showTouches === true) args.push('--show-touches');
+        if (settings.powerOffOnClose === true) args.push('--power-off-on-close');
+
+        // 其他设置
         if (settings.audioEnabled) args.push('--audio');
-        if (settings.powerOffOnClose) args.push('--power-off-on-close');
         if (!settings.clipboardAutosync) args.push('--no-clipboard-autosync');
         if (!settings.shortcutKeysEnabled) args.push('--disable-screensaver');
 
