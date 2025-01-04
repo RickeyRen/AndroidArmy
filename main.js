@@ -35,6 +35,11 @@ function logError(...args) {
     console.error(new Date().toISOString(), ...args);
 }
 
+// 调试日志函数
+function debug(message, ...args) {
+    console.log(`[Main] ${message}`, ...args);
+}
+
 let mainWindow;
 const settingsManager = new SettingsManager();
 const deviceManager = new DeviceManager();
@@ -237,20 +242,61 @@ function createWindow() {
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js')
-        },
-        vibrancy: 'menu',
-        visualEffectState: 'active',
-        backgroundColor: '#00000000',
-        transparent: true
+        }
     };
 
     // macOS 特定配置
     if (process.platform === 'darwin') {
-        windowOptions.titleBarStyle = 'hiddenInset';
-        windowOptions.trafficLightPosition = { x: 20, y: 20 };
+        Object.assign(windowOptions, {
+            titleBarStyle: 'hiddenInset',
+            trafficLightPosition: { x: 20, y: 20 },
+            vibrancy: 'menu',
+            visualEffectState: 'active',
+            backgroundColor: '#00000000',
+            transparent: true
+        });
+    } 
+    // Windows 特定配置
+    else if (process.platform === 'win32') {
+        Object.assign(windowOptions, {
+            transparent: true,
+            frame: false,
+            webPreferences: {
+                ...windowOptions.webPreferences,
+                backgroundThrottling: false
+            },
+            autoHideMenuBar: true,
+            darkTheme: true,
+            thickFrame: true, // 启用窗口阴影和调整大小
+            hasShadow: true,
+            resizable: true, // 确保窗口可以调整大小
+            maximizable: true // 确保窗口可以最大化
+        });
     }
 
     mainWindow = new BrowserWindow(windowOptions);
+    
+    // Windows 平台启用特效
+    if (process.platform === 'win32') {
+        mainWindow.setBackgroundColor('#00000000');
+
+        // 监听窗口最大化状态变化
+        mainWindow.on('maximize', () => {
+            console.log('[Main] Window maximized event');
+            mainWindow.webContents.send('window-state-change', true);
+        });
+
+        mainWindow.on('unmaximize', () => {
+            console.log('[Main] Window restored event');
+            mainWindow.webContents.send('window-state-change', false);
+        });
+
+        // 初始化时发送窗口状态
+        mainWindow.webContents.on('did-finish-load', () => {
+            console.log('[Main] Window loaded, sending initial state');
+            mainWindow.webContents.send('window-state-change', mainWindow.isMaximized());
+        });
+    }
 
     // 开发环境下打开开发者工具
     if (process.env.NODE_ENV === 'development') {
@@ -408,26 +454,44 @@ ipcMain.handle('update-device-name', async (event, deviceId, newName) => {
     }
 });
 
-// 窗口控制事件处理
-ipcMain.handle('window-close', () => {
-    if (mainWindow) {
-        mainWindow.close();
+// 统一的窗口控制处理程序
+ipcMain.handle('window-control', async (event, command) => {
+    console.log('[Main] Received window control command:', command);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+        console.error('[Main] Window not found');
+        return false;
     }
-});
 
-ipcMain.handle('window-minimize', () => {
-    if (mainWindow) {
-        mainWindow.minimize();
-    }
-});
-
-ipcMain.handle('window-maximize', () => {
-    if (mainWindow) {
-        if (mainWindow.isMaximized()) {
-            mainWindow.unmaximize();
-        } else {
-            mainWindow.maximize();
+    try {
+        switch (command) {
+            case 'minimize':
+                console.log('[Main] Minimizing window');
+                window.minimize();
+                return true;
+            case 'maximize':
+                console.log('[Main] Current maximize state:', window.isMaximized());
+                if (window.isMaximized()) {
+                    window.unmaximize();
+                    console.log('[Main] Window restored');
+                    window.webContents.send('window-state-change', false);
+                } else {
+                    window.maximize();
+                    console.log('[Main] Window maximized');
+                    window.webContents.send('window-state-change', true);
+                }
+                return true;
+            case 'close':
+                console.log('[Main] Closing window');
+                window.close();
+                return true;
+            default:
+                console.error('[Main] Unknown window control command:', command);
+                return false;
         }
+    } catch (error) {
+        console.error('[Main] Error executing window control command:', error);
+        return false;
     }
 });
 

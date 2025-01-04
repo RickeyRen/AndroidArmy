@@ -16,7 +16,16 @@ body {
 #app {
     display: flex;
     min-height: 100vh;
-    background: transparent;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+}
+
+/* Windows 平台特定样式 */
+@media screen and (-ms-high-contrast: active), (-ms-high-contrast: none) {
+    #app {
+        background: rgba(20, 20, 20, 0.85);
+    }
 }
 
 /* 标题栏样式 */
@@ -28,13 +37,27 @@ body {
     height: 28px;
     -webkit-app-region: drag;
     z-index: 9999;
-    background: transparent;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.titlebar-title {
+    margin-left: 10px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    font-weight: normal;
 }
 
 /* 侧边栏样式 */
 .sidebar {
     width: 300px;
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(18, 18, 20, 0.75);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     padding: 20px;
     display: flex;
@@ -96,13 +119,18 @@ body {
     flex: 1;
     padding: 20px;
     overflow-y: auto;
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(18, 18, 20, 0.6);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
     padding-top: 40px;
+    scroll-behavior: smooth;
 }
 
 /* 表单组样式 */
 .form-group {
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(18, 18, 20, 0.8);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     padding: 20px;
@@ -1337,6 +1365,7 @@ button, input, .action-button {
     max-width: 90%;
     max-height: 90vh;
     overflow-y: auto;
+    scroll-behavior: smooth;
 }
 
 .modal-header {
@@ -1373,4 +1402,112 @@ button, input, .action-button {
 .close-btn:hover {
     color: rgba(255, 255, 255, 0.9);
     background: rgba(255, 255, 255, 0.1);
+}
+
+/* Windows 窗口控制按钮 */
+.window-controls {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 28px;
+    display: flex;
+    z-index: 10000;
+    -webkit-app-region: no-drag;
+}
+
+.window-control-button {
+    width: 46px;
+    height: 28px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    opacity: 0.8;
+}
+
+.window-control-button:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.window-control-button.close:hover {
+    background: #e81123;
+}
+
+/* 标题栏样式 */
+.titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    -webkit-app-region: drag;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.titlebar-title {
+    margin-left: 10px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    font-weight: normal;
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* 确保主容器的滚动行为平滑 */
+.main-container {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: rgba(18, 18, 20, 0.6);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    padding-top: 40px;
+    scroll-behavior: smooth;
+}
+
+/* 设置模态框内容的滚动行为 */
+.modal-content {
+    background: rgba(28, 28, 30, 0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 12px;
+    padding: 24px;
+    position: relative;
+    max-width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    scroll-behavior: smooth;
 } 

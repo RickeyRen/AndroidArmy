@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="src/styles/main.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@mdi/font@6.5.95/css/materialdesignicons.min.css" rel="stylesheet">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <style>
         .material-icons {
             font-family: 'Material Icons';
@@ -26,7 +26,21 @@
     </style>
 </head>
 <body>
-    <div class="titlebar"></div>
+    <div class="titlebar">
+        <div class="titlebar-title">Android Army</div>
+        <!-- Windows 控制按钮 -->
+        <div class="window-controls">
+            <button class="window-control-button minimize">
+                <i class="mdi mdi-window-minimize"></i>
+            </button>
+            <button class="window-control-button maximize">
+                <i class="mdi mdi-window-maximize"></i>
+            </button>
+            <button class="window-control-button close">
+                <i class="mdi mdi-window-close"></i>
+            </button>
+        </div>
+    </div>
     <div id="app">
         <!-- 侧边栏 -->
         <div class="sidebar">
@@ -170,7 +184,7 @@
                         <div class="settings-group-content">
                             <div class="setting-item">
                                 <label>最大比特率 (Mbps)</label>
-                                <input type="number" v-model.number="scrcpySettings.videoBitrateKbps" @input="onBitrateInput" :value="scrcpySettings.videoBitrateKbps / 1000">
+                                <input type="number" v-model.number="scrcpySettings.videoBitrateKbps" @input="onBitrateInput">
                             </div>
                             <div class="setting-item">
                                 <label>最大帧率</label>

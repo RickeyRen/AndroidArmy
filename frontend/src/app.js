@@ -1,5 +1,8 @@
 const { createApp } = Vue;
 
+// 创建一个全局变量来存储 Vue 实例
+let vueApp;
+
 const app = createApp({
     data() {
         return {
@@ -24,6 +27,7 @@ const app = createApp({
             refreshInterval: null,
             isEditing: false,
             loadingDevices: false,
+            isMaximized: false,
             scrcpySettings: {
                 maxBitrate: 2000000,
                 maxFps: 30,
@@ -520,8 +524,11 @@ const app = createApp({
         },
 
         onBitrateInput(event) {
-            // 将 Mbps 转换为 Kbps
-            this.scrcpySettings.videoBitrateKbps = Math.round(event.target.value * 1000);
+            const mbps = parseFloat(event.target.value);
+            if (!isNaN(mbps)) {
+                // 将 Mbps 转换为 Kbps
+                this.scrcpySettings.videoBitrateKbps = Math.round(mbps * 1000);
+            }
         },
 
         showDeviceDetails(device) {
@@ -564,28 +571,178 @@ const app = createApp({
                 console.error('保存设备设置失败:', error);
                 this.showNotification('保存设备设置失败: ' + error.message, 'error');
             }
+        },
+
+        async executeGroupCommand() {
+            if (!this.selectedDevices.length || !this.currentCommand.trim()) {
+                this.showNotification('请选择设备并输入命令', 'error');
+                return;
+            }
+
+            try {
+                const results = await Promise.all(
+                    this.selectedDevices.map(deviceId =>
+                        window.api.executeCommand(deviceId, this.currentCommand.trim())
+                    )
+                );
+
+                const successCount = results.filter(r => r.success).length;
+                const failCount = results.length - successCount;
+
+                if (failCount === 0) {
+                    this.showNotification(`命令已在 ${successCount} 个设备上执行成功`, 'success');
+                } else {
+                    this.showNotification(`命令执行完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
+                }
+
+                this.currentCommand = ''; // 清空命令输入
+            } catch (error) {
+                console.error('执行群控命令失败:', error);
+                this.showNotification(`执行群控命令失败: ${error.message}`, 'error');
+            }
+        },
+
+        async pairDevice() {
+            if (!this.pairForm.ip || !this.pairForm.code) {
+                this.showNotification('请输入设备IP地址和配对码', 'error');
+                return;
+            }
+
+            if (!this.validateIPAddress(this.pairForm.ip)) {
+                return;
+            }
+
+            if (this.pairForm.port && !this.validatePort(this.pairForm.port)) {
+                return;
+            }
+
+            this.pairForm.isPairing = true;
+
+            try {
+                const result = await window.api.pairDevice(
+                    this.pairForm.ip,
+                    this.pairForm.port || '5555',
+                    this.pairForm.code
+                );
+
+                if (result.success) {
+                    this.showNotification('设备配对成功', 'success');
+                    // 清空表单
+                    this.pairForm.ip = '';
+                    this.pairForm.port = '';
+                    this.pairForm.code = '';
+                    // 刷新设备列表
+                    await this.loadDevices();
+                } else {
+                    throw new Error(result.message || '配对失败');
+                }
+            } catch (error) {
+                console.error('设备配对失败:', error);
+                this.showNotification(`设备配对失败: ${error.message}`, 'error');
+            } finally {
+                this.pairForm.isPairing = false;
+            }
+        },
+
+        updateMaximizeButton() {
+            console.log('[Frontend] Updating maximize button, isMaximized:', this.isMaximized);
+            const maximizeButton = document.querySelector('.window-control-button.maximize i');
+            if (maximizeButton) {
+                const newClassName = this.isMaximized ? 'mdi mdi-window-restore' : 'mdi mdi-window-maximize';
+                console.log('[Frontend] Setting button class to:', newClassName);
+                maximizeButton.className = newClassName;
+            } else {
+                console.error('[Frontend] Maximize button not found');
+            }
+        },
+
+        async toggleMaximize() {
+            try {
+                console.log('[Frontend] Attempting to toggle maximize');
+                if (!window.api || !window.api.windowControl) {
+                    console.error('[Frontend] Window control API not available');
+                    this.showNotification('窗口控制接口不可用', 'error');
+                    return;
+                }
+                console.log('[Frontend] Calling window control maximize');
+                const result = await window.api.windowControl.maximize();
+                console.log('[Frontend] Toggle maximize result:', result);
+                if (!result) {
+                    throw new Error('窗口控制失败');
+                }
+            } catch (error) {
+                console.error('[Frontend] 切换窗口最大化状态失败:', error);
+                this.showNotification('窗口控制失败: ' + error.message, 'error');
+            }
         }
     }
 });
 
-// 挂载Vue应用
-app.mount('#app');
+// 修改挂载代码，保存 Vue 实例
+vueApp = app.mount('#app');
 
 // 添加标题栏按钮事件处理
 document.addEventListener('DOMContentLoaded', () => {
-    const closeButton = document.querySelector('.titlebar-button.close');
-    const minimizeButton = document.querySelector('.titlebar-button.minimize');
-    const maximizeButton = document.querySelector('.titlebar-button.maximize');
+    console.log('[Frontend] DOM Content Loaded');
+    const closeButton = document.querySelector('.window-control-button.close');
+    const minimizeButton = document.querySelector('.window-control-button.minimize');
+    const maximizeButton = document.querySelector('.window-control-button.maximize');
 
-    closeButton.addEventListener('click', () => {
-        window.api.closeWindow();
-    });
+    if (closeButton) {
+        closeButton.addEventListener('click', async (e) => {
+            e.preventDefault();
+            console.log('[Frontend] Close button clicked');
+            try {
+                await window.api.windowControl.close();
+            } catch (error) {
+                console.error('[Frontend] Close failed:', error);
+            }
+        });
+    }
 
-    minimizeButton.addEventListener('click', () => {
-        window.api.minimizeWindow();
-    });
+    if (minimizeButton) {
+        minimizeButton.addEventListener('click', async (e) => {
+            e.preventDefault();
+            console.log('[Frontend] Minimize button clicked');
+            try {
+                await window.api.windowControl.minimize();
+            } catch (error) {
+                console.error('[Frontend] Minimize failed:', error);
+            }
+        });
+    }
 
-    maximizeButton.addEventListener('click', () => {
-        window.api.maximizeWindow();
-    });
-}); 
+    if (maximizeButton) {
+        maximizeButton.addEventListener('click', async (e) => {
+            e.preventDefault();
+            console.log('[Frontend] Maximize button clicked');
+            try {
+                if (!vueApp) {
+                    console.error('[Frontend] Vue app instance not found');
+                    return;
+                }
+                await vueApp.toggleMaximize();
+            } catch (error) {
+                console.error('[Frontend] Maximize failed:', error);
+            }
+        });
+    }
+
+    // 监听窗口状态变化
+    if (window.api && window.api.onWindowStateChange) {
+        window.api.onWindowStateChange((event, isMaximized) => {
+            console.log('[Frontend] Window state changed:', isMaximized);
+            if (!vueApp) {
+                console.error('[Frontend] Vue app instance not found when handling window state change');
+                return;
+            }
+            vueApp.isMaximized = isMaximized;
+            vueApp.updateMaximizeButton();
+        });
+    } else {
+        console.error('[Frontend] Window state change API not available');
+    }
+});
+
+// 导出 Vue 实例以供其他模块使用
+window.vueApp = vueApp; 
