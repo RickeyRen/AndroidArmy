@@ -209,12 +209,25 @@ const app = createApp({
         },
 
         validateIPAddress(ip) {
+            if (!ip) {
+                this.showNotification('请输入IP地址', 'error');
+                return false;
+            }
+
+            // 如果传入的是对象，获取ip属性
+            const ipAddress = typeof ip === 'object' ? ip.ip : ip;
+            
+            if (!ipAddress) {
+                this.showNotification('请输入IP地址', 'error');
+                return false;
+            }
+
             const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-            if (!ipRegex.test(ip)) {
+            if (!ipRegex.test(ipAddress)) {
                 this.showNotification('请输入有效的IP地址', 'error');
                 return false;
             }
-            const parts = ip.split('.');
+            const parts = ipAddress.split('.');
             for (let part of parts) {
                 const num = parseInt(part);
                 if (num < 0 || num > 255) {
@@ -226,7 +239,10 @@ const app = createApp({
         },
 
         validatePort(port) {
-            if (!port) return true; // 允许空端口
+            if (!port) {
+                this.showNotification('请输入端口号', 'error');
+                return false;
+            }
             const portNum = parseInt(port);
             if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
                 this.showNotification('端口号必须在1-65535之间', 'error');
@@ -237,57 +253,83 @@ const app = createApp({
 
         async connectDevice(deviceId) {
             try {
+                console.log('connectForm 当前状态:', this.connectForm);
+                console.log('传入的 deviceId:', deviceId);
+                
                 this.connectForm.isConnecting = true;
                 let ip, port;
                 
-                if (deviceId) {
-                    // 如果传入了设备ID（ip_port格式），则解析它
+                // 如果是从表单点击连接
+                if (!deviceId || deviceId.target) {
+                    ip = this.connectForm.ip;
+                    port = this.connectForm.port;
+                    console.log('使用表单值:', { ip, port });
+                } else if (typeof deviceId === 'object') {
+                    // 如果传入了对象格式 {ip, port}
+                    ip = deviceId.ip;
+                    port = deviceId.port;
+                    console.log('使用对象值:', { ip, port });
+                } else if (typeof deviceId === 'string' && deviceId.includes(':')) {
+                    // 如果传入了设备ID（ip_port格式）
                     const parts = deviceId.split(':');
                     ip = parts[0];
-                    port = parts[1] || '5555';
+                    port = parts[1];
+                    console.log('使用字符串值:', { ip, port });
                 } else {
                     // 否则使用表单中的值
                     ip = this.connectForm.ip;
-                    port = this.connectForm.port || '5555';
+                    port = this.connectForm.port;
+                    console.log('使用默认表单值:', { ip, port });
                 }
 
-                if (!ip || !this.validateIPAddress(ip)) {
-                    this.showNotification('请输入有效的IP地址', 'error');
-                    return;
-                }
+                // 去除空格并进行类型转换
+                ip = (ip || '').toString().trim();
+                port = (port || '').toString().trim();
 
-                if (!this.validatePort(port)) {
-                    this.showNotification('请输入有效的端口号', 'error');
-                    return;
-                }
-
-                console.log('正在连接设备:', { ip, port });
-                const result = await window.api.connectDevice(ip, port);
+                console.log('处理后的参数:', { ip, port });
                 
-                if (result.success) {
+                // 验证IP格式
+                if (!this.validateIPAddress(ip)) {
+                    console.log('IP地址验证失败:', ip);
+                    return;
+                }
+                
+                // 验证端口
+                if (!this.validatePort(port)) {
+                    console.log('端口验证失败:', port);
+                    return;
+                }
+
+                console.log('发送连接请求:', { ip, port });
+
+                // 使用对象传递参数
+                const result = await window.api.connectDevice({
+                    ip: ip,
+                    port: port
+                });
+                
+                if (result && result.success) {
                     this.showNotification('设备连接成功', 'success');
+                    // 刷新设备列表
+                    await this.loadDevices();
+                    // 只在连接成功时清空表单
                     this.connectForm.ip = '';
                     this.connectForm.port = '';
-
-                    // 智能刷新：连接设备后刷新列表
-                    if (this.deviceListSettings.refreshMode === 'smart' && 
-                        this.deviceListSettings.smartRefreshEvents.includes('connect')) {
-                        await this.refreshDevices();
-                    }
                 } else {
                     // 检查是否是未配对导致的连接失败
                     if (result.message.includes('由于目标计算机积极拒绝') || 
                         result.message.includes('10061')) {
                         this.showNotification('设备未配对，请先在设备的开发者选项中启用"无线调试"，查看配对端口号并完成配对', 'warning', 10000);
-                        // 只自动填充IP地址，不填充端口号
+                        // 自动填充配对表单
                         this.pairForm.ip = ip;
+                        this.pairForm.port = port;
                     } else {
-                        throw new Error(result.message);
+                        throw new Error(result?.message || '连接失败');
                     }
                 }
             } catch (error) {
                 console.error('连接设备失败:', error);
-                this.showNotification('连接设备失败: ' + error.message, 'error');
+                this.showNotification(`连接设备失败: ${error.message}`, 'error');
             } finally {
                 this.connectForm.isConnecting = false;
             }

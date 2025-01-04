@@ -1,0 +1,197 @@
+/* 设备网格布局 */
+.device-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px;
+}
+
+/* 设备卡片样式 */
+.device-card {
+    background: rgba(18, 18, 20, 0.8);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s ease;
+}
+
+.device-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.device-card.offline {
+    opacity: 0.7;
+    background: rgba(18, 18, 20, 0.6);
+}
+
+/* 设备卡片头部 */
+.device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+}
+
+.device-name {
+    flex: 1;
+    margin-right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.device-name h3 {
+    font-size: 18px;
+    font-weight: 500;
+    color: #fff;
+    margin: 0;
+}
+
+/* 设备信息 */
+.device-info {
+    margin: 15px 0;
+}
+
+.info-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.info-item .mdi {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.6);
+    width: 24px;
+    text-align: center;
+}
+
+/* 设备状态 */
+.device-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 12px;
+}
+
+.device-status.online {
+    color: #4CAF50;
+    position: relative;
+}
+
+.device-status.online::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background: #4CAF50;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 4px;
+    animation: ripple 1.5s linear infinite;
+}
+
+.device-status.offline {
+    color: #f44336;
+    position: relative;
+}
+
+.device-status.offline::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background: #f44336;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 4px;
+    animation: rippleRed 1.5s linear infinite;
+}
+
+/* 设备操作按钮 */
+.device-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+}
+
+.device-actions .action-button {
+    flex: 1;
+    min-width: 100px;
+    padding: 8px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.device-actions .action-button:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.device-actions .action-button.primary {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4CAF50;
+}
+
+.device-actions .action-button.primary:hover {
+    background: rgba(76, 175, 80, 0.25);
+}
+
+.device-actions .action-button.danger {
+    background: rgba(244, 67, 54, 0.2);
+    color: #f44336;
+}
+
+.device-actions .action-button.danger:hover {
+    background: rgba(244, 67, 54, 0.3);
+}
+
+/* 设备信息按钮 */
+.device-header .action-button.info {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.device-header .action-button.info:hover {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* 离线设备特殊样式 */
+.device-card.offline {
+    background: rgba(18, 18, 20, 0.6);
+}
+
+.device-card.offline .action-button.connect {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4CAF50;
+}
+
+.device-card.offline .action-button.connect:hover {
+    background: rgba(76, 175, 80, 0.3);
+}
+
+/* 修复按钮显示问题 */
+.device-card:not(.offline) .action-button.connect {
+    display: none;
+}
+
+.device-card.offline .action-button:not(.connect) {
+    display: none;
+} 

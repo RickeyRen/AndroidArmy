@@ -217,15 +217,67 @@ ipcMain.handle('pair-device', async (event, ip, port, code) => {
 });
 
 // 设备连接
-ipcMain.handle('connect-device', async (event, ip, port) => {
+ipcMain.handle('connect-device', async (event, params) => {
     try {
-        console.log('正在连接设备:', { ip, port });
-        const result = await deviceManager.connectDevice(ip, port);
-        console.log('设备连接结果:', result);
+        console.log('main: 收到连接设备请求:', params);
+        const { ip, port } = params;
+        
+        console.log('main: 参数类型:', { 
+            ipType: typeof ip, 
+            portType: typeof port,
+            ipValue: ip,
+            portValue: port
+        });
+
+        // 确保参数是字符串类型并去除空格
+        const cleanIp = String(ip || '').trim();
+        const cleanPort = String(port || '').trim();
+
+        // 验证参数
+        if (!cleanIp) {
+            console.error('main: IP地址为空');
+            return {
+                success: false,
+                message: 'IP地址不能为空'
+            };
+        }
+
+        if (!cleanPort) {
+            console.error('main: 端口号为空');
+            return {
+                success: false,
+                message: '端口号不能为空'
+            };
+        }
+
+        // 验证端口号格式
+        const portNum = parseInt(cleanPort);
+        if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+            console.error('main: 端口号格式无效:', cleanPort);
+            return {
+                success: false,
+                message: '端口号必须在1-65535之间'
+            };
+        }
+
+        console.log('main: 处理后的参数:', { ip: cleanIp, port: cleanPort });
+
+        const result = await deviceManager.connectDevice(cleanIp, cleanPort);
+        console.log('main: 设备连接结果:', result);
+        
+        // 智能刷新：连接后刷新
+        const settings = await settingsManager.getDeviceListSettings();
+        if (settings.refreshMode === 'smart' && settings.smartRefreshEvents.includes('connect')) {
+            await refreshDeviceList(true);
+        }
+
         return result;
     } catch (error) {
-        console.error('连接设备失败:', error);
-        throw error;
+        console.error('main: 连接设备失败:', error);
+        return {
+            success: false,
+            message: error.message
+        };
     }
 });
 

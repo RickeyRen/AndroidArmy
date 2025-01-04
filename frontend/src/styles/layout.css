@@ -1,0 +1,102 @@
+/* 标题栏样式 */
+.titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    -webkit-app-region: drag;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.titlebar-title {
+    margin-left: 10px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    font-weight: normal;
+}
+
+/* 窗口控制按钮 */
+.window-controls {
+    display: flex;
+    -webkit-app-region: no-drag;
+}
+
+.window-control-button {
+    width: 46px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.window-control-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.window-control-button.close:hover {
+    background: #e81123;
+}
+
+/* 侧边栏样式 */
+.sidebar {
+    width: 300px;
+    background: rgba(18, 18, 20, 0.75);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding-top: 40px;
+}
+
+.logo {
+    padding: 20px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logo h1 {
+    font-size: 24px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sidebar-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.sidebar-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* 主内容区样式 */
+.main-container {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: rgba(18, 18, 20, 0.6);
+    backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(70%);
+    padding-top: 40px;
+    scroll-behavior: smooth;
+} 

@@ -241,22 +241,46 @@ class DeviceManager extends EventEmitter {
     }
 
     // 新增方法：连接设备
-    async connectDevice(ip, port = '5555') {
+    async connectDevice(ip, port) {
         try {
-            if (!ip) {
+            console.log('DeviceManager: 收到连接请求:', { ip, port });
+            console.log('DeviceManager: 参数类型:', {
+                ipType: typeof ip,
+                portType: typeof port,
+                ipValue: ip,
+                portValue: port
+            });
+
+            if (!ip || typeof ip !== 'string') {
                 throw new Error('IP地址不能为空');
             }
 
-            console.log('正在连接设备:', { ip, port });
+            if (!port || typeof port !== 'string') {
+                throw new Error('端口号不能为空');
+            }
+
+            // 去除空格
+            ip = ip.trim();
+            port = port.trim();
+
+            // 验证端口号格式
+            const portNum = parseInt(port);
+            if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+                throw new Error('端口号必须在1-65535之间');
+            }
+
+            console.log('DeviceManager: 处理后的参数:', { ip, port });
+
             const { stdout } = await execAsync(`adb connect ${ip}:${port}`);
-            console.log('设备连接结果:', stdout);
+            console.log('DeviceManager: adb命令输出:', stdout);
 
             // 判断连接是否真的成功
             if (stdout.includes('cannot connect') || 
                 stdout.includes('failed to connect') || 
                 stdout.includes('无法连接') || 
                 stdout.includes('拒绝') ||
-                stdout.includes('failed')) {
+                stdout.includes('failed') ||
+                stdout.includes('bad port')) {
                 return { 
                     success: false, 
                     message: stdout.trim() 
@@ -274,7 +298,7 @@ class DeviceManager extends EventEmitter {
                 message: stdout.trim() 
             };
         } catch (error) {
-            console.error('连接设备失败:', error);
+            console.error('DeviceManager: 连接设备失败:', error);
             return {
                 success: false,
                 message: error.message

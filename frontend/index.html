@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>小米设备群控系统</title>
-    <link rel="stylesheet" href="src/styles/main.css">
+    <link rel="stylesheet" href="./src/styles/base.css">
+    <link rel="stylesheet" href="./src/styles/utilities.css">
+    <link rel="stylesheet" href="./src/styles/layout.css">
+    <link rel="stylesheet" href="./src/styles/components.css">
+    <link rel="stylesheet" href="./src/styles/modals.css">
+    <link rel="stylesheet" href="./src/styles/devices.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@mdi/font@6.5.95/css/materialdesignicons.min.css" rel="stylesheet">
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -124,7 +129,7 @@
                         </div>
                         <div class="device-actions">
                             <template v-if="device.status === 'online'">
-                                <button @click="startScrcpy(device.ip_port)" class="action-button">
+                                <button @click="startScrcpy(device.ip_port)" class="action-button primary">
                                     <span class="material-icons">cast</span>
                                     启动投屏
                                 </button>
@@ -134,7 +139,7 @@
                                 </button>
                             </template>
                             <template v-else>
-                                <button @click="connectDevice(device.ip_port)" class="action-button">
+                                <button @click="connectDevice({ip: device.ip_port.split(':')[0], port: device.ip_port.split(':')[1]})" class="action-button connect">
                                     <span class="material-icons">link</span>
                                     连接设备
                                 </button>
