@@ -251,16 +251,34 @@ class DeviceManager extends EventEmitter {
             const { stdout } = await execAsync(`adb connect ${ip}:${port}`);
             console.log('设备连接结果:', stdout);
 
+            // 判断连接是否真的成功
+            if (stdout.includes('cannot connect') || 
+                stdout.includes('failed to connect') || 
+                stdout.includes('无法连接') || 
+                stdout.includes('拒绝') ||
+                stdout.includes('failed')) {
+                return { 
+                    success: false, 
+                    message: stdout.trim() 
+                };
+            }
+
             // 等待一段时间，让设备状态更新
             await new Promise(resolve => setTimeout(resolve, 1000));
 
             // 更新设备列表
             await this.updateDevices();
 
-            return { success: true, message: stdout };
+            return { 
+                success: true, 
+                message: stdout.trim() 
+            };
         } catch (error) {
             console.error('连接设备失败:', error);
-            throw error;
+            return {
+                success: false,
+                message: error.message
+            };
         }
     }
 

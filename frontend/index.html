@@ -133,6 +133,12 @@
                                     断开连接
                                 </button>
                             </template>
+                            <template v-else>
+                                <button @click="connectDevice(device.ip_port)" class="action-button">
+                                    <span class="material-icons">link</span>
+                                    连接设备
+                                </button>
+                            </template>
                         </div>
                     </div>
                 </div>

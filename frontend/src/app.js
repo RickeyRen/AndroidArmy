@@ -262,15 +262,20 @@ const app = createApp({
                 }
 
                 console.log('正在连接设备:', { ip, port });
-                await window.api.connectDevice(ip, port);
-                this.showNotification('设备连接成功', 'success');
-                this.connectForm.ip = '';
-                this.connectForm.port = '';
+                const result = await window.api.connectDevice(ip, port);
+                
+                if (result.success) {
+                    this.showNotification('设备连接成功', 'success');
+                    this.connectForm.ip = '';
+                    this.connectForm.port = '';
 
-                // 智能刷新：连接设备后刷新列表
-                if (this.deviceListSettings.refreshMode === 'smart' && 
-                    this.deviceListSettings.smartRefreshEvents.includes('connect')) {
-                    await this.refreshDevices();
+                    // 智能刷新：连接设备后刷新列表
+                    if (this.deviceListSettings.refreshMode === 'smart' && 
+                        this.deviceListSettings.smartRefreshEvents.includes('connect')) {
+                        await this.refreshDevices();
+                    }
+                } else {
+                    throw new Error(result.message);
                 }
             } catch (error) {
                 console.error('连接设备失败:', error);
