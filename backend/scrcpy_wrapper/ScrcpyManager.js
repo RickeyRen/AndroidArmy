@@ -113,11 +113,12 @@ class ScrcpyManager extends EventEmitter {
         const settings = await this.settingsManager.getScrcpySettings();
         const args = ['-s', deviceId];
 
-        // 添加基本设置
-        if (settings.maxSize) args.push('--max-size', settings.maxSize);
-        if (settings.videoBitrateKbps) args.push('--video-bit-rate', settings.videoBitrateKbps + 'K');
-        if (settings.maxFps) args.push('--max-fps', settings.maxFps);
-        if (settings.screenWidth && settings.screenHeight) {
+        // 只在设置值与默认值不同时才添加参数
+        if (settings.maxSize && settings.maxSize !== 0) args.push('--max-size', settings.maxSize);
+        if (settings.videoBitrateKbps && settings.videoBitrateKbps !== 2000) args.push('--video-bit-rate', settings.videoBitrateKbps + 'K');
+        if (settings.maxFps && settings.maxFps !== 30) args.push('--max-fps', settings.maxFps);
+        if (settings.screenWidth && settings.screenHeight && 
+            (settings.screenWidth !== 800 || settings.screenHeight !== 600)) {
             args.push('--window-width', settings.screenWidth);
             args.push('--window-height', settings.screenHeight);
         }
@@ -127,20 +128,20 @@ class ScrcpyManager extends EventEmitter {
         if (settings.encoderName && settings.encoderName !== '') {
             args.push('--video-encoder', settings.encoderName);
         }
-        if (settings.borderless) args.push('--window-borderless');
-        if (settings.fullscreen) args.push('--fullscreen');
-        if (settings.alwaysOnTop) args.push('--always-on-top');
+        if (settings.borderless === true) args.push('--window-borderless');
+        if (settings.fullscreen === true) args.push('--fullscreen');
+        if (settings.alwaysOnTop === true) args.push('--always-on-top');
 
-        // 可能需要权限的设置，只在明确启用时添加
+        // 需要特殊权限的设置，只在明确设置为 true 时添加
         if (settings.stayAwake === true) args.push('--stay-awake');
         if (settings.turnScreenOff === true) args.push('--turn-screen-off');
         if (settings.showTouches === true) args.push('--show-touches');
         if (settings.powerOffOnClose === true) args.push('--power-off-on-close');
 
         // 其他设置
-        if (settings.audioEnabled) args.push('--audio');
-        if (!settings.clipboardAutosync) args.push('--no-clipboard-autosync');
-        if (!settings.shortcutKeysEnabled) args.push('--disable-screensaver');
+        if (settings.audioEnabled === true) args.push('--audio');
+        if (settings.clipboardAutosync === false) args.push('--no-clipboard-autosync');
+        if (settings.shortcutKeysEnabled === false) args.push('--disable-screensaver');
 
         return args;
     }
