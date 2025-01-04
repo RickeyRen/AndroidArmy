@@ -275,7 +275,16 @@ const app = createApp({
                         await this.refreshDevices();
                     }
                 } else {
-                    throw new Error(result.message);
+                    // 检查是否是未配对导致的连接失败
+                    if (result.message.includes('由于目标计算机积极拒绝') || 
+                        result.message.includes('10061')) {
+                        this.showNotification('设备未配对，请先在设备的开发者选项中启用"无线调试"，并完成配对', 'warning');
+                        // 自动填充配对表单的IP和端口
+                        this.pairForm.ip = ip;
+                        this.pairForm.port = port;
+                    } else {
+                        throw new Error(result.message);
+                    }
                 }
             } catch (error) {
                 console.error('连接设备失败:', error);
