@@ -278,10 +278,9 @@ const app = createApp({
                     // 检查是否是未配对导致的连接失败
                     if (result.message.includes('由于目标计算机积极拒绝') || 
                         result.message.includes('10061')) {
-                        this.showNotification('设备未配对，请先在设备的开发者选项中启用"无线调试"，并完成配对', 'warning');
-                        // 自动填充配对表单的IP和端口
+                        this.showNotification('设备未配对，请先在设备的开发者选项中启用"无线调试"，查看配对端口号并完成配对', 'warning', 10000);
+                        // 只自动填充IP地址，不填充端口号
                         this.pairForm.ip = ip;
-                        this.pairForm.port = port;
                     } else {
                         throw new Error(result.message);
                     }
@@ -332,7 +331,7 @@ const app = createApp({
             }
         },
 
-        showNotification(message, type = 'info') {
+        showNotification(message, type = 'info', duration = 3000) {
             const id = this.notificationId++;
             const existingNotification = this.notifications.find(n => n.message === message);
             if (existingNotification) {
@@ -347,10 +346,10 @@ const app = createApp({
             };
             this.notifications.push(notification);
 
-            // 3秒后自动关闭通知
+            // 使用传入的duration参数作为显示时间
             setTimeout(() => {
                 this.closeNotification(id);
-            }, 3000);
+            }, duration);
         },
 
         closeNotification(id) {
