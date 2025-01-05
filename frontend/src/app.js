@@ -6,6 +6,7 @@ let vueApp;
 const app = createApp({
     data() {
         return {
+            activeTab: 'devices',
             devices: [],
             connectedDevices: new Set(),
             selectedDevices: [],

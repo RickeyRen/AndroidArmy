@@ -4,6 +4,14 @@ npm-debug.log
 yarn-debug.log
 yarn-error.log
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+/database/*.db-journal
+/database/*.db-wal
+/database/*.db-shm
+
 # IDE
 .idea/
 .vscode/
@@ -21,10 +29,3 @@ Thumbs.db
 # Logs
 /logs
 *.log
-
-# Keep database directory but ignore temp files
-/database/*.db-journal
-/database/*.db-wal
-/database/*.db-shm
-database/devices.db
-database/devices.db

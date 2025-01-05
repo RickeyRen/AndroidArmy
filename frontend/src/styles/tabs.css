@@ -1,0 +1,179 @@
+.titlebar {
+    -webkit-app-region: drag;
+    height: 30px;
+    background: rgba(26, 26, 26, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 0 10px;
+}
+
+.titlebar-title {
+    font-size: 12px;
+    color: #fff;
+    white-space: nowrap;
+}
+
+.window-controls {
+    display: flex;
+    -webkit-app-region: no-drag;
+    height: 100%;
+}
+
+.window-control-button {
+    width: 45px;
+    height: 100%;
+    border: none;
+    background: transparent;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.window-control-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.window-control-button.close:hover {
+    background: #e81123;
+}
+
+.tabs-container {
+    background: rgba(26, 26, 26, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    width: 100%;
+    height: 40px;
+    position: fixed;
+    top: 30px;
+    left: 0;
+    z-index: 900;
+}
+
+.tabs {
+    display: flex;
+    gap: 10px;
+    height: 100%;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.tab {
+    padding: 0 20px;
+    color: #888;
+    cursor: pointer;
+    height: 100%;
+    transition: all 0.3s ease;
+    position: relative;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+}
+
+.tab:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.tab.active {
+    color: #fff;
+    background: rgba(44, 44, 44, 0.8);
+}
+
+.tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #0078d4;
+    box-shadow: 0 0 8px rgba(0, 120, 212, 0.5);
+}
+
+/* 内容区域样式 */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+    padding-top: 70px; /* 标题栏(30px) + 选项卡(40px) 的高度 */
+}
+
+.content-wrapper {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+}
+
+.sidebar {
+    width: 300px;
+    min-width: 300px;
+    background: rgba(26, 26, 26, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-y: auto;
+    height: 100%;
+}
+
+.main-container {
+    flex: 1;
+    overflow-y: auto;
+    height: 100%;
+    background: rgba(26, 26, 26, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* 屏幕池占位样式 */
+.screen-pool-content {
+    height: 100%;
+    width: 100%;
+    background: rgba(26, 26, 26, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.screen-pool-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    color: #666;
+    text-align: center;
+    padding: 20px;
+}
+
+.screen-pool-placeholder .mdi {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+
+.screen-pool-placeholder h2 {
+    font-size: 24px;
+    margin-bottom: 10px;
+    font-weight: normal;
+}
+
+.screen-pool-placeholder p {
+    font-size: 16px;
+    opacity: 0.7;
+} 
