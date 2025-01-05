@@ -507,6 +507,86 @@ class DeviceManager extends EventEmitter {
             );
         });
     }
+
+    // 删除设备
+    async deleteDevice(deviceId) {
+        try {
+            console.log('DeviceManager: 正在删除设备:', deviceId);
+            
+            if (!deviceId) {
+                throw new Error('设备ID不能为空');
+            }
+
+            // 先断开设备连接（如果已连接）
+            try {
+                await this.disconnectDevice(deviceId);
+            } catch (error) {
+                console.log('设备可能已断开连接:', error);
+            }
+
+            // 从数据库中删除设备记录
+            return new Promise((resolve, reject) => {
+                this.db.run('DELETE FROM devices WHERE ip_port = ?', [deviceId], (err) => {
+                    if (err) {
+                        console.error('从数据库删除设备失败:', err);
+                        reject(err);
+                    } else {
+                        console.log('设备已从数据库中删除');
+                        resolve(true);
+                    }
+                });
+            });
+        } catch (error) {
+            console.error('删除设备失败:', error);
+            throw error;
+        }
+    }
+
+    async deleteDeviceFromDB(deviceId) {
+        try {
+            console.log('DeviceManager: 正在从数据库删除设备:', deviceId);
+            
+            // 验证设备ID
+            if (!deviceId) {
+                throw new Error('设备ID不能为空');
+            }
+
+            // 从数据库中删除设备记录
+            const db = await this.getDB();
+            const result = await db.run(
+                'DELETE FROM devices WHERE ip_port = ?',
+                [deviceId]
+            );
+
+            // 删除设备相关的设置
+            await db.run(
+                'DELETE FROM device_settings WHERE device_id = ?',
+                [deviceId]
+            );
+
+            // 删除设备的自定义名称
+            await db.run(
+                'DELETE FROM device_names WHERE device_id = ?',
+                [deviceId]
+            );
+
+            console.log('DeviceManager: 设备删除结果:', result);
+
+            // 从内存中的设备列表中移除
+            const index = this.devices.findIndex(device => device.ip_port === deviceId);
+            if (index !== -1) {
+                this.devices.splice(index, 1);
+            }
+
+            return {
+                success: true,
+                message: '设备已从数据库中删除'
+            };
+        } catch (error) {
+            console.error('DeviceManager: 从数据库删除设备失败:', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = DeviceManager; 

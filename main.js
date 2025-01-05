@@ -301,7 +301,8 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'frontend/src/preload.js'),
+            backgroundThrottling: false
         }
     };
 
@@ -321,10 +322,6 @@ function createWindow() {
         Object.assign(windowOptions, {
             transparent: true,
             frame: false,
-            webPreferences: {
-                ...windowOptions.webPreferences,
-                backgroundThrottling: false
-            },
             autoHideMenuBar: true,
             darkTheme: true,
             thickFrame: true, // 启用窗口阴影和调整大小
@@ -573,5 +570,33 @@ ipcMain.handle('update-device-settings', async (event, deviceId, settings) => {
     } catch (error) {
         logError('更新设备设置失败:', error);
         throw error;
+    }
+});
+
+// 删除设备
+ipcMain.handle('delete-device', async (event, deviceId) => {
+    try {
+        console.log('main: 收到删除设备请求:', deviceId);
+        
+        if (!deviceId) {
+            throw new Error('设备ID不能为空');
+        }
+
+        // 从设备管理器中删除设备
+        await deviceManager.deleteDevice(deviceId);
+        
+        // 刷新设备列表
+        await refreshDeviceList(true);
+        
+        return {
+            success: true,
+            message: '设备已删除'
+        };
+    } catch (error) {
+        console.error('删除设备失败:', error);
+        return {
+            success: false,
+            message: error.message
+        };
     }
 }); 

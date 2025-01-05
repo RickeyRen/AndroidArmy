@@ -116,47 +116,142 @@
 /* 设备操作按钮 */
 .device-actions {
     display: flex;
-    gap: 10px;
-    margin-top: 15px;
-    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 0 8px;
 }
 
 .device-actions .action-button {
     flex: 1;
-    min-width: 100px;
-    padding: 8px;
-    border-radius: 6px;
+    padding: 10px 16px;
+    border-radius: 8px;
     border: none;
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    transition: all 0.3s ease;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    min-width: unset;
+    max-width: calc(50% - 6px);
 }
 
-.device-actions .action-button:hover {
-    background: rgba(255, 255, 255, 0.15);
+/* 在线状态的按钮样式 */
+.device-card:not(.offline) .device-actions .action-button {
+    max-width: calc(50% - 6px);
 }
 
-.device-actions .action-button.primary {
-    background: rgba(76, 175, 80, 0.15);
+/* 离线状态的按钮样式 */
+.device-card.offline .device-actions {
+    justify-content: space-between;
+}
+
+.device-card.offline .device-actions .action-button {
+    flex: 1;
+    max-width: calc(50% - 6px);
+}
+
+/* 按钮基础样式 */
+.action-button {
+    position: relative;
+    overflow: hidden;
+    transform: translateY(0);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 按钮悬停效果 */
+.action-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* 按钮点击效果 */
+.action-button:active {
+    transform: translateY(1px);
+}
+
+/* 主要按钮特效 */
+.action-button.primary {
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(76, 175, 80, 0.2));
     color: #4CAF50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
 }
 
-.device-actions .action-button.primary:hover {
-    background: rgba(76, 175, 80, 0.25);
+.action-button.primary:hover {
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(76, 175, 80, 0.3));
+    border-color: rgba(76, 175, 80, 0.4);
 }
 
-.device-actions .action-button.danger {
-    background: rgba(244, 67, 54, 0.2);
-    color: #f44336;
+/* 危险按钮特效 */
+.action-button.danger {
+    background: linear-gradient(135deg, rgba(244, 67, 54, 0.1), rgba(244, 67, 54, 0.2));
+    color: #F44336;
+    border: 1px solid rgba(244, 67, 54, 0.3);
 }
 
-.device-actions .action-button.danger:hover {
-    background: rgba(244, 67, 54, 0.3);
+.action-button.danger:hover {
+    background: linear-gradient(135deg, rgba(244, 67, 54, 0.2), rgba(244, 67, 54, 0.3));
+    border-color: rgba(244, 67, 54, 0.4);
+}
+
+/* 连接按钮特效 */
+.action-button.connect {
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(33, 150, 243, 0.2));
+    color: #2196F3;
+    border: 1px solid rgba(33, 150, 243, 0.3);
+}
+
+.action-button.connect:hover {
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.2), rgba(33, 150, 243, 0.3));
+    border-color: rgba(33, 150, 243, 0.4);
+}
+
+/* 图标动画 */
+.action-button .material-icons {
+    font-size: 18px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.action-button:hover .material-icons {
+    transform: scale(1.1);
+}
+
+/* 按钮内容动画 */
+.action-button span {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.action-button:hover span {
+    letter-spacing: 0.5px;
+}
+
+/* 按钮光晕效果 */
+.action-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        120deg,
+        transparent,
+        rgba(255, 255, 255, 0.2),
+        transparent
+    );
+    transition: 0.5s;
+}
+
+.action-button:hover::before {
+    left: 100%;
+}
+
+/* 确保按钮在离线状态下也能显示 */
+.device-card.offline .device-actions {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 /* 设备信息按钮 */
@@ -167,10 +262,17 @@
     padding: 4px;
     cursor: pointer;
     transition: all 0.3s ease;
+    min-width: unset;
 }
 
 .device-header .action-button.info:hover {
     color: rgba(255, 255, 255, 0.8);
+}
+
+/* 按钮禁用状态 */
+.action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* 离线设备特殊样式 */
@@ -192,6 +294,12 @@
     display: none;
 }
 
-.device-card.offline .action-button:not(.connect) {
+.device-card.offline .action-button.connect,
+.device-card.offline .action-button.danger {
+    display: flex;
+}
+
+.device-card:not(.offline) .action-button.connect,
+.device-card:not(.offline) .action-button.danger.delete {
     display: none;
 } 

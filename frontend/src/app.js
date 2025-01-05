@@ -69,6 +69,12 @@ const app = createApp({
     },
 
     async created() {
+        // 添加调试日志
+        console.log('window.api 对象:', window.api);
+        console.log('window.api 方法列表:', Object.keys(window.api));
+        console.log('deleteDevice 方法:', window.api.deleteDevice);
+        console.log('deleteDevice 方法类型:', typeof window.api.deleteDevice);
+        
         // 初始化设置
         await this.loadSettings();
         
@@ -728,6 +734,35 @@ const app = createApp({
             } catch (error) {
                 console.error('[Frontend] 切换窗口最大化状态失败:', error);
                 this.showNotification('窗口控制失败: ' + error.message, 'error');
+            }
+        },
+
+        async deleteDevice(deviceId) {
+            try {
+                console.log('frontend: 正在删除设备:', deviceId);
+                if (!deviceId) {
+                    throw new Error('设备ID不能为空');
+                }
+                
+                // 确认是否要删除
+                if (!confirm('确定要删除此设备吗？此操作不可恢复。')) {
+                    return;
+                }
+                
+                // 调用删除设备的 API
+                const result = await window.api.deleteDevice(deviceId);
+                console.log('frontend: 删除设备结果:', result);
+                
+                if (result && result.success) {
+                    this.showNotification('设备已删除', 'success');
+                    // 刷新设备列表
+                    await this.loadDevices();
+                } else {
+                    throw new Error(result?.message || '删除失败');
+                }
+            } catch (error) {
+                console.error('删除设备失败:', error);
+                this.showNotification(`删除设备失败: ${error.message}`, 'error');
             }
         }
     }
