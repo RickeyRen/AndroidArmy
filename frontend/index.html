@@ -10,7 +10,6 @@
     <link rel="stylesheet" href="./src/styles/components.css">
     <link rel="stylesheet" href="./src/styles/modals.css">
     <link rel="stylesheet" href="./src/styles/devices.css">
-    <link rel="stylesheet" href="./src/styles/tabs.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@mdi/font@6.5.95/css/materialdesignicons.min.css" rel="stylesheet">
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -34,6 +33,7 @@
 <body>
     <div class="titlebar">
         <div class="titlebar-title">Android Army</div>
+        <!-- Windows 控制按钮 -->
         <div class="window-controls">
             <button class="window-control-button minimize">
                 <i class="mdi mdi-window-minimize"></i>
@@ -46,155 +46,129 @@
             </button>
         </div>
     </div>
-
     <div id="app">
-        <div class="app-container">
-            <!-- 选项卡导航 -->
-            <div class="tabs-container">
-                <div class="tabs">
-                    <div class="tab" :class="{ active: activeTab === 'devices' }" @click="activeTab = 'devices'">
-                        <span class="mdi mdi-cellphone-link"></span> 设备管理
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="logo">
+                <h1><span class="mdi mdi-cellphone-link"></span> 设备管理</h1>
+            </div>
+            
+            <div class="sidebar-content">
+                <!-- 顶部操作栏 -->
+                <div class="sidebar-menu">
+                    <button @click="refreshDevices" class="menu-item" :disabled="loadingDevices">
+                        <span class="mdi mdi-refresh" :class="{ 'mdi-spin': loadingDevices }"></span> 
+                        刷新设备
+                    </button>
+                    <button @click="executeGroupCommand" class="menu-item" :disabled="!selectedDevices.length">
+                        <span class="mdi mdi-console-line"></span> 群控命令
+                    </button>
+                    <button @click="showSettings = true" class="menu-item">
+                        <span class="mdi mdi-cog"></span> 设置
+                    </button>
+                </div>
+
+                <!-- 连接设备表单 -->
+                <div class="form-group">
+                    <h3><span class="mdi mdi-lan-connect"></span> 连接设备</h3>
+                    <div class="form-content">
+                        <input type="text" v-model="connectForm.ip" placeholder="设备IP地址" :disabled="connectForm.isConnecting">
+                        <input type="text" v-model="connectForm.port" placeholder="端口号 (默认5555)" :disabled="connectForm.isConnecting">
+                        <button @click="connectDevice" :disabled="connectForm.isConnecting">
+                            <span class="mdi" :class="connectForm.isConnecting ? 'mdi-loading mdi-spin' : 'mdi-connection'"></span>
+                            {{ connectForm.isConnecting ? '连接中...' : '连接设备' }}
+                        </button>
                     </div>
-                    <div class="tab" :class="{ active: activeTab === 'screen-pool' }" @click="activeTab = 'screen-pool'">
-                        <span class="mdi mdi-monitor-multiple"></span> 屏幕池
+                </div>
+
+                <!-- 配对设备表单 -->
+                <div class="form-group">
+                    <h3><span class="mdi mdi-key-wireless"></span> 配对设备</h3>
+                    <div class="form-content">
+                        <input type="text" v-model="pairForm.ip" placeholder="设备IP地址" :disabled="pairForm.isPairing">
+                        <input type="text" v-model="pairForm.port" placeholder="端口号 (默认5555)" :disabled="pairForm.isPairing">
+                        <input type="text" v-model="pairForm.code" placeholder="配对码" :disabled="pairForm.isPairing">
+                        <button @click="pairDevice" :disabled="pairForm.isPairing">
+                            <span class="mdi" :class="pairForm.isPairing ? 'mdi-loading mdi-spin' : 'mdi-key-link'"></span>
+                            {{ pairForm.isPairing ? '配对中...' : '配对设备' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-container">
+            <!-- 设备列表 -->
+            <div class="device-list">
+                <!-- 设备网格 -->
+                <div class="device-grid">
+                    <div v-for="device in devices" :key="device.ip_port" class="device-card" :class="{ 'offline': device.status !== 'online' }">
+                        <div class="device-header">
+                            <div class="device-name">
+                                <span class="device-status" :class="device.status"></span>
+                                <h3>{{ device.display_name }}</h3>
+                            </div>
+                            <button @click="showDeviceDetails(device)" class="action-button info">
+                                <span class="material-icons">info</span>
+                            </button>
+                        </div>
+                        <div class="device-info">
+                            <div class="info-item">
+                                <i class="mdi mdi-cellphone"></i>
+                                <span>{{ device.brand }} {{ device.model }}</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="mdi mdi-android"></i>
+                                <span>Android {{ device.android_version }}</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="mdi mdi-ip-network"></i>
+                                <span>{{ device.ip_port }}</span>
+                            </div>
+                        </div>
+                        <div class="device-actions">
+                            <template v-if="device.status === 'online'">
+                                <button @click="startScrcpy(device.ip_port)" class="action-button primary">
+                                    <span class="material-icons">cast</span>
+                                    启动投屏
+                                </button>
+                                <button @click="disconnectDevice(device.ip_port)" class="action-button danger">
+                                    <span class="material-icons">link_off</span>
+                                    断开连接
+                                </button>
+                            </template>
+                            <template v-else>
+                                <button @click="connectDevice({ip: device.ip_port.split(':')[0], port: device.ip_port.split(':')[1]})" class="action-button connect">
+                                    <span class="material-icons">link</span>
+                                    连接设备
+                                </button>
+                                <button @click="deleteDevice(device.ip_port)" class="action-button danger delete">
+                                    <span class="material-icons">delete</span>
+                                    删除
+                                </button>
+                            </template>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 主要内容区域 -->
-            <div class="content-wrapper">
-                <!-- 侧边栏 -->
-                <div class="sidebar">
-                    <div class="sidebar-content">
-                        <!-- 顶部操作栏 -->
-                        <div class="sidebar-menu">
-                            <button @click="refreshDevices" class="menu-item" :disabled="loadingDevices">
-                                <span class="mdi mdi-refresh" :class="{ 'mdi-spin': loadingDevices }"></span> 
-                                刷新设备
-                            </button>
-                            <button @click="executeGroupCommand" class="menu-item" :disabled="!selectedDevices.length">
-                                <span class="mdi mdi-console-line"></span> 群控命令
-                            </button>
-                            <button @click="showSettings = true" class="menu-item">
-                                <span class="mdi mdi-cog"></span> 设置
-                            </button>
-                        </div>
+            <!-- 加载提示浮窗 -->
+            <div v-if="loadingDevices" class="loading-overlay">
+                <span class="mdi mdi-refresh mdi-spin"></span>
+                <span class="loading-text">加载设备中...</span>
+            </div>
 
-                        <!-- 连接设备表单 -->
-                        <div class="form-group">
-                            <h3><span class="mdi mdi-lan-connect"></span> 连接设备</h3>
-                            <div class="form-content">
-                                <input type="text" v-model="connectForm.ip" placeholder="设备IP地址" :disabled="connectForm.isConnecting">
-                                <input type="text" v-model="connectForm.port" placeholder="端口号 (默认5555)" :disabled="connectForm.isConnecting">
-                                <button @click="connectDevice" :disabled="connectForm.isConnecting">
-                                    <span class="mdi" :class="connectForm.isConnecting ? 'mdi-loading mdi-spin' : 'mdi-connection'"></span>
-                                    {{ connectForm.isConnecting ? '连接中...' : '连接设备' }}
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- 配对设备表单 -->
-                        <div class="form-group">
-                            <h3><span class="mdi mdi-key-wireless"></span> 配对设备</h3>
-                            <div class="form-content">
-                                <input type="text" v-model="pairForm.ip" placeholder="设备IP地址" :disabled="pairForm.isPairing">
-                                <input type="text" v-model="pairForm.port" placeholder="端口号 (默认5555)" :disabled="pairForm.isPairing">
-                                <input type="text" v-model="pairForm.code" placeholder="配对码" :disabled="pairForm.isPairing">
-                                <button @click="pairDevice" :disabled="pairForm.isPairing">
-                                    <span class="mdi" :class="pairForm.isPairing ? 'mdi-loading mdi-spin' : 'mdi-key-link'"></span>
-                                    {{ pairForm.isPairing ? '配对中...' : '配对设备' }}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 主内容区 -->
-                <div class="main-container">
-                    <!-- 设备管理内容 -->
-                    <div v-show="activeTab === 'devices'" class="tab-content devices-content">
-                        <!-- 设备列表 -->
-                        <div class="device-list">
-                            <!-- 设备网格 -->
-                            <div class="device-grid">
-                                <div v-for="device in devices" :key="device.ip_port" class="device-card" :class="{ 'offline': device.status !== 'online' }">
-                                    <div class="device-header">
-                                        <div class="device-name">
-                                            <span class="device-status" :class="device.status"></span>
-                                            <h3>{{ device.display_name }}</h3>
-                                        </div>
-                                        <button @click="showDeviceDetails(device)" class="action-button info">
-                                            <span class="material-icons">info</span>
-                                        </button>
-                                    </div>
-                                    <div class="device-info">
-                                        <div class="info-item">
-                                            <i class="mdi mdi-cellphone"></i>
-                                            <span>{{ device.brand }} {{ device.model }}</span>
-                                        </div>
-                                        <div class="info-item">
-                                            <i class="mdi mdi-android"></i>
-                                            <span>Android {{ device.android_version }}</span>
-                                        </div>
-                                        <div class="info-item">
-                                            <i class="mdi mdi-ip-network"></i>
-                                            <span>{{ device.ip_port }}</span>
-                                        </div>
-                                    </div>
-                                    <div class="device-actions">
-                                        <template v-if="device.status === 'online'">
-                                            <button @click="startScrcpy(device.ip_port)" class="action-button primary">
-                                                <span class="material-icons">cast</span>
-                                                启动投屏
-                                            </button>
-                                            <button @click="disconnectDevice(device.ip_port)" class="action-button danger">
-                                                <span class="material-icons">link_off</span>
-                                                断开连接
-                                            </button>
-                                        </template>
-                                        <template v-else>
-                                            <button @click="connectDevice({ip: device.ip_port.split(':')[0], port: device.ip_port.split(':')[1]})" class="action-button connect">
-                                                <span class="material-icons">link</span>
-                                                连接设备
-                                            </button>
-                                            <button @click="deleteDevice(device.ip_port)" class="action-button danger delete">
-                                                <span class="material-icons">delete</span>
-                                                删除
-                                            </button>
-                                        </template>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 加载提示浮窗 -->
-                        <div v-if="loadingDevices" class="loading-overlay">
-                            <span class="mdi mdi-refresh mdi-spin"></span>
-                            <span class="loading-text">加载设备中...</span>
-                        </div>
-
-                        <!-- 控制面板 -->
-                        <div class="control-panel" v-if="selectedDevices.length > 0">
-                            <div class="panel-section">
-                                <h2><span class="mdi mdi-console-line"></span> 群控命令</h2>
-                                <div class="command-input">
-                                    <input type="text" v-model="currentCommand" placeholder="输入要执行的命令" @keyup.enter="executeCurrentCommand">
-                                    <button @click="executeCurrentCommand">
-                                        <span class="mdi mdi-send"></span>
-                                        执行
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 屏幕池内容 -->
-                    <div v-show="activeTab === 'screen-pool'" class="tab-content screen-pool-content">
-                        <div class="screen-pool-placeholder">
-                            <span class="mdi mdi-monitor-multiple"></span>
-                            <h2>屏幕池</h2>
-                            <p>这里将显示所有已连接设备的屏幕</p>
-                        </div>
+            <!-- 控制面板 -->
+            <div class="control-panel" v-if="selectedDevices.length > 0">
+                <div class="panel-section">
+                    <h2><span class="mdi mdi-console-line"></span> 群控命令</h2>
+                    <div class="command-input">
+                        <input type="text" v-model="currentCommand" placeholder="输入要执行的命令" @keyup.enter="executeCurrentCommand">
+                        <button @click="executeCurrentCommand">
+                            <span class="mdi mdi-send"></span>
+                            执行
+                        </button>
                     </div>
                 </div>
             </div>
